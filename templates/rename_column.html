@@ -1,0 +1,83 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Rename Column{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Rename Column{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+    </li>
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Rename Column in {{ table_name }}</h3>
+
+{% if error.len() > 0 %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form action="/table/{{ table_name }}/rename-column" method="post" role="form">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="old_name">Current Column Name</label>
+                <select
+                    class="form-control"
+                    id="old_name"
+                    name="old_name"
+                    required
+                >
+                    <option value="">Choose a column...</option>
+                    {% for column in columns %}
+                    <option value="{{ column }}">{{ column }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="new_name">New Column Name</label>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="new_name"
+                    name="new_name"
+                    required
+                />
+                <small class="form-text text-muted"
+                    >Enter the new name for the column</small
+                >
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-info">
+        <strong>Note:</strong> Renaming a column may affect queries, views, or
+        applications that reference this column.
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-primary">Rename Column</button>
+        <a href="/table/{{ table_name }}/structure" class="btn btn-secondary"
+            >Cancel</a
+        >
+    </div>
+</form>
+{% endblock %}

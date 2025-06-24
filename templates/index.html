@@ -1,0 +1,94 @@
+<!doctype html>
+<html>
+    <head>
+        <title>SQL Web - {{ database_stats.database_name }}</title>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="stylesheet" href="/static/css/bootstrap.min.css" />
+        <link rel="stylesheet" href="/static/css/sqlbrowse.css" />
+    </head>
+    <body>
+        <div class="container-fluid">
+            <div class="page-header">
+                <h1>{{ database_stats.database_name }}</h1>
+            </div>
+
+            <div class="row">
+                <div class="col-3" id="sidebar">
+                    <h4>Tables</h4>
+                    <ul class="nav nav-pills nav-stacked">
+                        {% for table in tables %}
+                        <li class="nav-item">
+                            <a
+                                class="nav-link"
+                                href="/table/{{ table }}/content"
+                                >{{ table }}</a
+                            >
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+
+                <div class="col-9" id="content">
+                    <table class="table table-striped">
+                        <tbody>
+                            <tr>
+                                <th>Database Type</th>
+                                <td>{{ database_stats.database_type }}</td>
+                            </tr>
+                            {% if database_stats.file_size.is_some() %}
+                            <tr>
+                                <th>Size</th>
+                                <td>{{ file_size_display }}</td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <th>Tables</th>
+                                <td>{{ database_stats.table_count }}</td>
+                            </tr>
+                            <tr>
+                                <th>Indexes</th>
+                                <td>{{ database_stats.index_count }}</td>
+                            </tr>
+                            <tr>
+                                <th>Read Only</th>
+                                <td>
+                                    {% if database_stats.readonly %}Yes{% else
+                                    %}No{% endif %}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <hr />
+
+                    <h3>Query</h3>
+                    <form action="/query" method="post">
+                        <div class="form-group">
+                            <textarea
+                                class="form-control"
+                                name="sql"
+                                placeholder="Execute SQL query..."
+                                rows="5"
+                            ></textarea>
+                        </div>
+                        <button class="btn btn-primary" type="submit">
+                            Execute
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <footer class="mt-5">
+                <hr />
+                <p class="text-center text-muted">
+                    SQL Web v{{ version }} - A database browser built with Rust
+                    and Rocket
+                </p>
+            </footer>
+        </div>
+
+        <script src="/static/js/jquery-1.11.0.min.js"></script>
+        <script src="/static/js/bootstrap.bundle.min.js"></script>
+    </body>
+</html>

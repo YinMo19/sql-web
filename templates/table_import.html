@@ -1,0 +1,385 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Import{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Import{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/insert">Insert</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/export">Export</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active" href="/table/{{ table_name }}/import"
+            >Import</a
+        >
+    </li>
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Import Data into {{ table_name }}</h3>
+
+{% if error != "" %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form
+    action="/table/{{ table_name }}/import"
+    method="post"
+    enctype="multipart/form-data"
+    role="form"
+>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Import Format</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check">
+                        <input
+                            class="form-check-input"
+                            type="radio"
+                            name="format"
+                            id="format_json"
+                            value="json"
+                            checked
+                        />
+                        <label class="form-check-label" for="format_json">
+                            <strong>JSON</strong>
+                            <br /><small class="text-muted"
+                                >Import from JSON array of objects</small
+                            >
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input
+                            class="form-check-input"
+                            type="radio"
+                            name="format"
+                            id="format_csv"
+                            value="csv"
+                        />
+                        <label class="form-check-label" for="format_csv">
+                            <strong>CSV</strong>
+                            <br /><small class="text-muted"
+                                >Import from comma-separated values</small
+                            >
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Import Options</h5>
+                </div>
+                <div class="card-body">
+                    <div class="form-check">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            name="create_columns"
+                            id="create_columns"
+                            value="true"
+                        />
+                        <label class="form-check-label" for="create_columns">
+                            <strong>Create Missing Columns</strong>
+                            <br /><small class="text-muted"
+                                >Automatically create columns for unrecognized
+                                keys</small
+                            >
+                        </label>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input
+                            class="form-check-input"
+                            type="checkbox"
+                            name="ignore_errors"
+                            id="ignore_errors"
+                            value="true"
+                        />
+                        <label class="form-check-label" for="ignore_errors">
+                            <strong>Ignore Errors</strong>
+                            <br /><small class="text-muted"
+                                >Continue importing even if some rows
+                                fail</small
+                            >
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <h5>Data Source</h5>
+        </div>
+        <div class="card-body">
+            <div class="nav nav-tabs" id="import-tabs" role="tablist">
+                <a
+                    class="nav-item nav-link active"
+                    id="file-tab"
+                    data-toggle="tab"
+                    href="#file-panel"
+                    role="tab"
+                    >Upload File</a
+                >
+                <a
+                    class="nav-item nav-link"
+                    id="text-tab"
+                    data-toggle="tab"
+                    href="#text-panel"
+                    role="tab"
+                    >Paste Data</a
+                >
+            </div>
+
+            <div class="tab-content mt-3">
+                <div
+                    class="tab-pane fade show active"
+                    id="file-panel"
+                    role="tabpanel"
+                >
+                    <div class="form-group">
+                        <label for="import_file">Select File</label>
+                        <input
+                            type="file"
+                            class="form-control-file"
+                            id="import_file"
+                            name="import_file"
+                            accept=".json,.csv,.txt"
+                        />
+                        <small class="form-text text-muted"
+                            >Choose a JSON or CSV file to import</small
+                        >
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="text-panel" role="tabpanel">
+                    <div class="form-group">
+                        <label for="import_data">Paste Data</label>
+                        <textarea
+                            class="form-control"
+                            id="import_data"
+                            name="import_data"
+                            rows="10"
+                            placeholder="Paste your JSON or CSV data here..."
+                        ></textarea>
+                        <small class="form-text text-muted"
+                            >Paste JSON array or CSV data directly</small
+                        >
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mt-3">
+        <div class="card-header">
+            <h5>Data Preview</h5>
+        </div>
+        <div class="card-body">
+            <div id="preview-container">
+                <p class="text-muted">
+                    Select a file or paste data to see a preview
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-info mt-3">
+        <h5>Format Examples:</h5>
+        <div class="row">
+            <div class="col-md-6">
+                <strong>JSON Format:</strong>
+                <pre><code>[
+  {"id": 1, "name": "John", "email": "john@example.com"},
+  {"id": 2, "name": "Jane", "email": "jane@example.com"}
+]</code></pre>
+            </div>
+            <div class="col-md-6">
+                <strong>CSV Format:</strong>
+                <pre><code>id,name,email
+1,John,john@example.com
+2,Jane,jane@example.com</code></pre>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group mt-3">
+        <button type="submit" class="btn btn-primary">
+            <i class="fa fa-upload"></i> Import Data
+        </button>
+        <a href="/table/{{ table_name }}/content" class="btn btn-secondary"
+            >Cancel</a
+        >
+    </div>
+</form>
+
+<script>
+    // Handle file input change
+    document
+        .getElementById("import_file")
+        .addEventListener("change", function (e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function (e) {
+                    previewData(e.target.result);
+                };
+                reader.readAsText(file);
+            }
+        });
+
+    // Handle textarea input
+    document
+        .getElementById("import_data")
+        .addEventListener("input", function (e) {
+            previewData(e.target.value);
+        });
+
+    // Preview data function
+    function previewData(data) {
+        const previewContainer = document.getElementById("preview-container");
+
+        if (!data.trim()) {
+            previewContainer.innerHTML =
+                '<p class="text-muted">No data to preview</p>';
+            return;
+        }
+
+        try {
+            const format = document.querySelector(
+                'input[name="format"]:checked',
+            ).value;
+            let preview = "";
+
+            if (format === "json") {
+                const jsonData = JSON.parse(data);
+                if (Array.isArray(jsonData) && jsonData.length > 0) {
+                    preview = `<p><strong>Found ${jsonData.length} records</strong></p>`;
+                    preview +=
+                        "<p><strong>Sample columns:</strong> " +
+                        Object.keys(jsonData[0]).join(", ") +
+                        "</p>";
+                    preview +=
+                        "<pre>" +
+                        JSON.stringify(jsonData.slice(0, 3), null, 2) +
+                        "</pre>";
+                    if (jsonData.length > 3) {
+                        preview +=
+                            '<p class="text-muted">... and ' +
+                            (jsonData.length - 3) +
+                            " more records</p>";
+                    }
+                } else {
+                    preview =
+                        '<p class="text-warning">Invalid JSON format or empty array</p>';
+                }
+            } else if (format === "csv") {
+                const lines = data.trim().split("\n");
+                if (lines.length > 1) {
+                    const headers = lines[0].split(",");
+                    preview = `<p><strong>Found ${lines.length - 1} records</strong></p>`;
+                    preview +=
+                        "<p><strong>Columns:</strong> " +
+                        headers.join(", ") +
+                        "</p>";
+                    preview +=
+                        '<div class="table-responsive"><table class="table table-sm table-bordered">';
+                    preview += "<thead><tr>";
+                    headers.forEach((header) => {
+                        preview += "<th>" + header.trim() + "</th>";
+                    });
+                    preview += "</tr></thead><tbody>";
+
+                    const previewRows = lines.slice(1, 4);
+                    previewRows.forEach((line) => {
+                        const cells = line.split(",");
+                        preview += "<tr>";
+                        cells.forEach((cell) => {
+                            preview += "<td>" + cell.trim() + "</td>";
+                        });
+                        preview += "</tr>";
+                    });
+                    preview += "</tbody></table></div>";
+
+                    if (lines.length > 4) {
+                        preview +=
+                            '<p class="text-muted">... and ' +
+                            (lines.length - 4) +
+                            " more records</p>";
+                    }
+                } else {
+                    preview =
+                        '<p class="text-warning">CSV data should have at least a header row and one data row</p>';
+                }
+            }
+
+            previewContainer.innerHTML = preview;
+        } catch (error) {
+            previewContainer.innerHTML =
+                '<p class="text-danger">Error parsing data: ' +
+                error.message +
+                "</p>";
+        }
+    }
+
+    // Update preview when format changes
+    document.querySelectorAll('input[name="format"]').forEach((radio) => {
+        radio.addEventListener("change", function () {
+            const fileInput = document.getElementById("import_file");
+            const textInput = document.getElementById("import_data");
+
+            if (fileInput.files.length > 0) {
+                fileInput.dispatchEvent(new Event("change"));
+            } else if (textInput.value.trim()) {
+                previewData(textInput.value);
+            }
+        });
+    });
+
+    // Form validation
+    document.querySelector("form").addEventListener("submit", function (e) {
+        const fileInput = document.getElementById("import_file");
+        const textInput = document.getElementById("import_data");
+
+        if (!fileInput.files.length && !textInput.value.trim()) {
+            e.preventDefault();
+            alert("Please select a file or paste data to import.");
+            return;
+        }
+
+        if (fileInput.files.length && textInput.value.trim()) {
+            e.preventDefault();
+            alert("Please use either file upload OR paste data, not both.");
+            return;
+        }
+    });
+</script>
+{% endblock %}

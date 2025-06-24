@@ -1,0 +1,79 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Drop Column{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Drop Column{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+    </li>
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Drop Column from {{ table_name }}</h3>
+
+{% if error.len() > 0 %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<div class="alert alert-warning">
+    <strong>Warning:</strong> Dropping a column will permanently delete all data
+    in that column. This action cannot be undone!
+</div>
+
+<form action="/table/{{ table_name }}/drop-column" method="post" role="form">
+    <div class="form-group">
+        <label for="column_name">Select Column to Drop</label>
+        <select
+            class="form-control"
+            id="column_name"
+            name="column_name"
+            required
+        >
+            <option value="">Choose a column...</option>
+            {% for column in columns %}
+            <option value="{{ column }}">{{ column }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="form-group">
+        <div class="form-check">
+            <input
+                type="checkbox"
+                class="form-check-input"
+                id="confirm"
+                required
+            />
+            <label class="form-check-label" for="confirm">
+                I understand that this action will permanently delete the column
+                and all its data
+            </label>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-danger">Drop Column</button>
+        <a href="/table/{{ table_name }}/structure" class="btn btn-secondary"
+            >Cancel</a
+        >
+    </div>
+</form>
+{% endblock %}

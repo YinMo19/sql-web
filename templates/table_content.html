@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+
+{% block title %}{{ database_name }} - {{ table_data.name }}{% endblock %}
+
+{% block content_title %}<a href="/">{{ database_name }}</a> - {{ table_data.name }}{% endblock %}
+
+{% block sidebar %}
+<h4>{{ table_data.name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link active" href="/table/{{ table_data.name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_data.name }}/structure">Structure</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_data.name }}/query">Query</a>
+    </li>
+    {% if !readonly %}
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_data.name }}/insert">Insert</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_data.name }}/export">Export</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_data.name }}/import">Import</a>
+    </li>
+    {% endif %}
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Table Content</h3>
+    <div>
+        <span class="badge badge-info">{{ table_data.total_rows }} rows</span>
+        {% if !readonly %}
+        <a href="/table/{{ table_data.name }}/insert" class="btn btn-sm btn-success">Add Row</a>
+        {% endif %}
+    </div>
+</div>
+
+{% if table_data.rows.len() == 0 %}
+<div class="alert alert-info">
+    <h4>No data found</h4>
+    <p>This table is empty.</p>
+    {% if !readonly %}
+    <a href="/table/{{ table_data.name }}/insert" class="btn btn-primary">Add First Row</a>
+    {% endif %}
+</div>
+{% else %}
+<div class="table-responsive">
+    <table class="table table-striped table-hover small">
+        <thead class="thead-dark">
+            <tr>
+                {% for column in table_data.columns %}
+                <th>{{ column }}</th>
+                {% endfor %}
+                {% if !readonly %}
+                <th width="120">Actions</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in table_data.rows %}
+            <tr>
+                {% for value in row %}
+                <td>
+                    {% if value == "NULL" %}
+                    <code class="text-muted">NULL</code>
+                    {% else %}
+                        {% if value.len() > 50 %}
+                        <span title="{{ value }}">{{ value | truncate(50) }}...</span>
+                        {% else %}
+                        {{ value }}
+                        {% endif %}
+                    {% endif %}
+                </td>
+                {% endfor %}
+                {% if !readonly %}
+                <td>
+                    <div class="btn-group" role="group">
+                        <a href="/table/{{ table_data.name }}/update" class="btn btn-xs btn-outline-primary" title="Edit">
+                            <i class="fa fa-edit"></i> Edit
+                        </a>
+                        <button type="button" class="btn btn-xs btn-outline-danger" title="Delete" onclick="confirmDelete('{{ table_data.name }}')">
+                            <i class="fa fa-trash"></i> Delete
+                        </button>
+                    </div>
+                </td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+{% if pagination.total_pages > 1 %}
+<nav aria-label="Table pagination">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.prev_page }}">Previous</a>
+        </li>
+        {% endif %}
+
+        <li class="page-item active">
+            <span class="page-link">
+                Page {{ pagination.page }} of {{ pagination.total_pages }}
+            </span>
+        </li>
+
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ pagination.next_page }}">Next</a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+
+<div class="text-center text-muted">
+    Showing {{ (pagination.page - 1) * pagination.per_page + 1 }} - {{ pagination.page * pagination.per_page }} of {{ pagination.total_rows }} rows
+</div>
+{% endif %}
+
+{% if !readonly %}
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this row?</p>
+                <p class="text-danger">This action cannot be undone!</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                <form id="deleteForm" method="post" style="display: inline">
+                    <button type="submit" class="btn btn-danger">Delete Row</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function confirmDelete(tableName, ...keyValuePairs) {
+        const form = document.getElementById("deleteForm");
+        let params = new URLSearchParams();
+
+        for (let i = 0; i < keyValuePairs.length; i += 2) {
+            const key = keyValuePairs[i];
+            const value = keyValuePairs[i + 1];
+            params.append(key, value);
+        }
+
+        form.action = "/table/" + tableName + "/delete?" + params.toString();
+        $("#deleteModal").modal("show");
+    }
+</script>
+{% endif %}
+{% endblock %}

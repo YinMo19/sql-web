@@ -1,0 +1,117 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Query{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Query{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active" href="/table/{{ table_name }}/query"
+            >Query</a
+        >
+    </li>
+    {% if !readonly %}
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/insert">Insert</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/export">Export</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/import">Import</a>
+    </li>
+    {% endif %}
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Query Table: {{ table_name }}</h3>
+
+<form action="/table/{{ table_name }}/query" method="post" role="form">
+    <div
+        class="form-group{% if error != "" %} has-error has-feedback{% endif %}"
+    >
+        <textarea
+            class="form-control{% if error != "" %} is-invalid{% endif %}"
+            id="sql"
+            name="sql"
+            style="height: 120px"
+        >
+{{ sql }}</textarea
+        >
+        <small class="form-text text-muted">Enter your SQL query here</small>
+        {% if error != "" %}
+        <div class="invalid-feedback">{{ error }}</div>
+        {% endif %}
+    </div>
+    <button class="btn btn-primary" type="submit">Execute</button>
+    {% if has_result %}
+    <button class="btn btn-secondary" name="export_json" type="submit">
+        Export JSON
+    </button>
+    <button class="btn btn-secondary" name="export_csv" type="submit">
+        Export CSV
+    </button>
+    {% endif %}
+</form>
+<hr />
+
+{% if has_result %}
+{% if rows_affected_display != "" %}
+<p>Rows affected: <code>{{ rows_affected_display }}</code></p>
+{% endif %}
+
+{% if has_columns %}
+    {% if has_rows %}
+    <h4>Results</h4>
+    <div class="table-responsive">
+        <table class="table table-striped small cell-content">
+            <thead>
+                <tr>
+                    {% for column in columns %}
+                    <th>{{ column }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                <tr>
+                    {% for value in row %}
+                    <td>
+                        {% if value == "NULL" %}
+                        <code>NULL</code>
+                        {% else %}
+                        {% if value != "" %}
+                        <span title="{{ value }}">{{ value }}</span>
+                        {% else %}
+                        {{ value }}
+                        {% endif %}
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>Empty result set.</p>
+    {% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

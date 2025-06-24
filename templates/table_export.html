@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}{{ database_name }} - {{ table_name }} Export{% endblock %}
+
+{% block content_title %}<a href="/">{{ database_name }}</a> - {{ table_name }} Export{% endblock %}
+
+{% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+  <li class="nav-item">
+    <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/table/{{ table_name }}/structure">Structure</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/table/{{ table_name }}/insert">Insert</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link active" href="/table/{{ table_name }}/export">Export</a>
+  </li>
+  <li class="nav-item">
+    <a class="nav-link" href="/table/{{ table_name }}/import">Import</a>
+  </li>
+</ul>
+
+<hr>
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+  <li class="nav-item">
+    <a class="nav-link" href="/tables">All Tables</a>
+  </li>
+</ul>
+{% endblock %}
+
+{% block content %}
+  <h3>Export Data from {{ table_name }}</h3>
+
+  <form action="/table/{{ table_name }}/export" method="post" role="form">
+    <div class="row">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h5>Export Format</h5>
+          </div>
+          <div class="card-body">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="format" id="format_json" value="json" checked>
+              <label class="form-check-label" for="format_json">
+                <strong>JSON</strong>
+                <br><small class="text-muted">Export as JSON array of objects</small>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="format" id="format_csv" value="csv">
+              <label class="form-check-label" for="format_csv">
+                <strong>CSV</strong>
+                <br><small class="text-muted">Export as comma-separated values</small>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h5>Export Options</h5>
+          </div>
+          <div class="card-body">
+            <div class="form-group">
+              <label for="limit">Limit Rows (optional)</label>
+              <input type="number" class="form-control" id="limit" name="limit" min="1" placeholder="Leave empty for all rows">
+              <small class="form-text text-muted">Maximum number of rows to export</small>
+            </div>
+
+            <div class="form-group">
+              <label for="where_clause">WHERE Clause (optional)</label>
+              <input type="text" class="form-control" id="where_clause" name="where_clause" placeholder="column = 'value'">
+              <small class="form-text text-muted">Filter rows to export (without WHERE keyword)</small>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h5>Select Columns to Export</h5>
+      </div>
+      <div class="card-body">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="select_all" checked>
+          <label class="form-check-label" for="select_all">
+            <strong>Select All Columns</strong>
+          </label>
+        </div>
+        <hr>
+        <div class="row">
+          {% for column in columns %}
+            <div class="col-md-4 col-sm-6">
+              <div class="form-check">
+                <input class="form-check-input column-checkbox" type="checkbox" name="columns" value="{{ column }}" id="col_{{ loop.index0 }}" checked>
+                <label class="form-check-label" for="col_{{ loop.index0 }}">
+                  {{ column }}
+                </label>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group mt-3">
+      <button type="submit" class="btn btn-primary">
+        <i class="fa fa-download"></i> Export Data
+      </button>
+      <a href="/table/{{ table_name }}/content" class="btn btn-secondary">Cancel</a>
+    </div>
+  </form>
+
+  <script>
+    // Handle select all checkbox
+    document.getElementById('select_all').addEventListener('change', function() {
+      const checkboxes = document.querySelectorAll('.column-checkbox');
+      checkboxes.forEach(checkbox => {
+        checkbox.checked = this.checked;
+      });
+    });
+
+    // Update select all checkbox when individual checkboxes change
+    document.querySelectorAll('.column-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', function() {
+        const allCheckboxes = document.querySelectorAll('.column-checkbox');
+        const checkedCheckboxes = document.querySelectorAll('.column-checkbox:checked');
+        const selectAllCheckbox = document.getElementById('select_all');
+
+        if (checkedCheckboxes.length === 0) {
+          selectAllCheckbox.indeterminate = false;
+          selectAllCheckbox.checked = false;
+        } else if (checkedCheckboxes.length === allCheckboxes.length) {
+          selectAllCheckbox.indeterminate = false;
+          selectAllCheckbox.checked = true;
+        } else {
+          selectAllCheckbox.indeterminate = true;
+        }
+      });
+    });
+
+    // Validate form before submission
+    document.querySelector('form').addEventListener('submit', function(e) {
+      const checkedColumns = document.querySelectorAll('.column-checkbox:checked');
+      if (checkedColumns.length === 0) {
+        e.preventDefault();
+        alert('Please select at least one column to export.');
+      }
+    });
+  </script>
+{% endblock %}

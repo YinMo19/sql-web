@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+    <head>
+        <title>SQL Web - Login</title>
+        <meta charset="utf-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex" />
+        <link
+            rel="stylesheet"
+            type="text/css"
+            href="/static/css/bootstrap.min.css"
+        />
+        <link
+            rel="stylesheet"
+            type="text/css"
+            href="/static/css/sqlbrowse.css"
+        />
+        <style type="text/css">
+            .login-container {
+                max-width: 400px;
+                margin: 100px auto;
+                padding: 20px;
+                box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                border-radius: 5px;
+            }
+            .login-header {
+                text-align: center;
+                margin-bottom: 30px;
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <div class="login-container">
+                <div class="login-header">
+                    <h2>SQL Web</h2>
+                    <p class="text-muted">Database Browser</p>
+                </div>
+
+                {% match error %} {% when Some with (err) %}
+                <div class="alert alert-danger">
+                    <p>{{ err }}</p>
+                </div>
+                {% when None %} {% endmatch %}
+
+                <form method="post" action="/login">
+                    <div class="form-group">
+                        <label for="password">Password:</label>
+                        <input
+                            type="password"
+                            class="form-control"
+                            id="password"
+                            name="password"
+                            placeholder="Enter password"
+                            required
+                            autofocus
+                        />
+                    </div>
+
+                    <button type="submit" class="btn btn-primary btn-block">
+                        Login
+                    </button>
+                </form>
+
+                <div class="text-center mt-3">
+                    <small class="text-muted">
+                        Set SQL_WEB_PASSWORD environment variable or use
+                        default: admin
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <script src="/static/js/jquery-1.11.0.min.js"></script>
+        <script src="/static/js/bootstrap.bundle.min.js"></script>
+    </body>
+</html>

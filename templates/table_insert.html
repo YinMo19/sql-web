@@ -1,0 +1,77 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Insert{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Insert{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active" href="/table/{{ table_name }}/insert"
+            >Insert</a
+        >
+    </li>
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Insert Row into {{ table_name }}</h3>
+
+{% if error != "" %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form action="/table/{{ table_name }}/insert" method="post" role="form">
+    <div class="row">
+        {% for column in columns %}
+        <div class="col-md-6 mb-3">
+            <label for="{{ column.name }}">{{ column.name }}</label>
+            <input
+                type="text"
+                class="form-control"
+                id="{{ column.name }}"
+                name="data[{{ column.name }}]"
+                placeholder="{% if column.nullable %}Optional{% else %}Required{% endif %}"
+                {%
+                if
+                !column.nullable
+                &&
+                !column.is_primary_key
+                %}required{%
+                endif
+                %}
+            />
+            <small class="form-text text-muted">
+                Type: {{ column.data_type }} {% if column.nullable %}
+                (Nullable){% endif %} {% if column.is_primary_key %} (Primary
+                Key){% endif %}
+            </small>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-primary">Insert Row</button>
+        <a href="/table/{{ table_name }}/content" class="btn btn-secondary"
+            >Cancel</a
+        >
+    </div>
+</form>
+{% endblock %}

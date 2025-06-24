@@ -1,0 +1,8 @@
+[default]
+# replace with yours.
+# you can use
+# ```
+# head -c64 /dev/urandom | base64
+# ```
+# to create one.
+# secret_key = "h/ie6GKkDtaurjNrQYCRsrSaWLNRVA2hSeyMSD8NycZphe7Le6ZZiJsdareCfE3jIuMV9hG/nbxRCJNKhUBkuw=="

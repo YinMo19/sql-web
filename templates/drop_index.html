@@ -1,0 +1,113 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Drop Index{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Drop Index{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+    </li>
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Drop Index from {{ table_name }}</h3>
+
+{% if error != "" %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %} {% if indexes.is_empty() %}
+<div class="alert alert-info">
+    <h4>No indexes found</h4>
+    <p>This table doesn't have any indexes to drop.</p>
+    <a href="/table/{{ table_name }}/structure" class="btn btn-secondary"
+        >Back to Structure</a
+    >
+</div>
+{% else %}
+<div class="alert alert-warning">
+    <strong>Warning:</strong> Dropping an index may affect query performance.
+    This action cannot be undone!
+</div>
+
+<form action="/table/{{ table_name }}/drop-index" method="post" role="form">
+    <div class="form-group">
+        <label for="index_name">Select Index to Drop</label>
+        <select class="form-control" id="index_name" name="index_name" required>
+            <option value="">Choose an index...</option>
+            {% for index in indexes %}
+            <option value="{{ index }}">{{ index }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5>Current Indexes</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Columns</th>
+                            <th>Unique</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for index in indexes %}
+                        <tr>
+                            <td><strong>{{ index }}</strong></td>
+                            <td>
+                                <code>N/A</code>
+                            </td>
+                            <td>
+                                <span class="badge badge-secondary">N/A</span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <div class="form-check">
+            <input
+                type="checkbox"
+                class="form-check-input"
+                id="confirm"
+                required
+            />
+            <label class="form-check-label" for="confirm">
+                I understand that dropping this index may affect query
+                performance
+            </label>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-danger">Drop Index</button>
+        <a href="/table/{{ table_name }}/structure" class="btn btn-secondary"
+            >Cancel</a
+        >
+    </div>
+</form>
+{% endif %} {% endblock %}

@@ -1,0 +1,113 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Add Column{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Add Column{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+    </li>
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Add Column to {{ table_name }}</h3>
+
+{% if error != "" %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form action="/table/{{ table_name }}/add-column" method="post" role="form">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="name">Column Name</label>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="name"
+                    name="name"
+                    required
+                />
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="data_type">Data Type</label>
+                <select
+                    class="form-control"
+                    id="data_type"
+                    name="data_type"
+                    required
+                >
+                    <option value="TEXT">TEXT</option>
+                    <option value="INTEGER">INTEGER</option>
+                    <option value="REAL">REAL</option>
+                    <option value="BLOB">BLOB</option>
+                    <option value="VARCHAR(255)">VARCHAR(255)</option>
+                    <option value="BOOLEAN">BOOLEAN</option>
+                    <option value="DATE">DATE</option>
+                    <option value="TIMESTAMP">TIMESTAMP</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group">
+                <div class="form-check">
+                    <input
+                        type="checkbox"
+                        class="form-check-input"
+                        id="nullable"
+                        name="nullable"
+                        value="true"
+                        checked
+                    />
+                    <label class="form-check-label" for="nullable">
+                        Allow NULL values
+                    </label>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="default_value">Default Value (optional)</label>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="default_value"
+                    name="default_value"
+                />
+                <small class="form-text text-muted"
+                    >Leave empty for no default value</small
+                >
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-primary">Add Column</button>
+        <a href="/table/{{ table_name }}/structure" class="btn btn-secondary"
+            >Cancel</a
+        >
+    </div>
+</form>
+{% endblock %}

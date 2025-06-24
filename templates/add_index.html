@@ -1,0 +1,128 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table_name
+}} Add Index{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table_name }} Add Index{% endblock %} {% block sidebar %}
+<h4>{{ table_name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table_name }}/query">Query</a>
+    </li>
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<h3>Add Index to {{ table_name }}</h3>
+
+{% if error != "" %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form action="/table/{{ table_name }}/add-index" method="post" role="form">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="form-group">
+                <label for="name">Index Name</label>
+                <input
+                    type="text"
+                    class="form-control"
+                    id="name"
+                    name="name"
+                    required
+                />
+                <small class="form-text text-muted"
+                    >Choose a unique name for the index</small
+                >
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="form-group">
+                <div class="form-check">
+                    <input
+                        type="checkbox"
+                        class="form-check-input"
+                        id="unique"
+                        name="unique"
+                        value="true"
+                    />
+                    <label class="form-check-label" for="unique">
+                        Unique Index
+                    </label>
+                    <small class="form-text text-muted"
+                        >Ensures all values in the indexed columns are
+                        unique</small
+                    >
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Select Columns for Index</label>
+        <div class="card">
+            <div class="card-body">
+                {% for column in columns %}
+                <div class="form-check">
+                    <input
+                        type="checkbox"
+                        class="form-check-input"
+                        id="column_{{ loop.index0 }}"
+                        name="columns"
+                        value="{{ column }}"
+                    />
+                    <label
+                        class="form-check-label"
+                        for="column_{{ loop.index0 }}"
+                    >
+                        {{ column }}
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        <small class="form-text text-muted"
+            >Select one or more columns to include in the index</small
+        >
+    </div>
+
+    <div class="alert alert-info">
+        <strong>Note:</strong> Indexes can improve query performance but may
+        slow down INSERT, UPDATE, and DELETE operations.
+    </div>
+
+    <div class="form-group">
+        <button type="submit" class="btn btn-primary">Create Index</button>
+        <a href="/table/{{ table_name }}/structure" class="btn btn-secondary"
+            >Cancel</a
+        >
+    </div>
+</form>
+
+<script>
+    // Ensure at least one column is selected
+    document.querySelector("form").addEventListener("submit", function (e) {
+        const checkboxes = document.querySelectorAll(
+            'input[name="columns"]:checked',
+        );
+        if (checkboxes.length === 0) {
+            e.preventDefault();
+            alert("Please select at least one column for the index.");
+        }
+    });
+</script>
+{% endblock %}

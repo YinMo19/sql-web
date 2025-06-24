@@ -1,0 +1,20 @@
+div.page-header {
+  margin: 40px 0 20px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #f8f5f0;
+}
+#sidebar .nav>li>a {padding: 3px 10px;}
+h1>small {font-size: 50%;}
+table.cell-content td,
+table.cell-content th {
+    padding: 1px 4px 1px 4px;
+    border: 1px dotted #cccccc;
+}
+ul.pagination .page-item .page-link {
+    border-color: #aaaaaa !important;
+    color: #888;
+}
+ul.pagination .page-item.disabled .page-link {
+    border-color: #dee2e6 !important;
+    color: #aaa;
+}

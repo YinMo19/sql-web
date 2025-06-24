@@ -1,0 +1,161 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - Tables{%
+endblock %} {% block content_title %}<a href="/">{{ database_name }}</a> -
+Tables{% endblock %} {% block sidebar %}
+<h4>Tables</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/">Overview</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/query">Query</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active" href="/tables">Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<div class="row">
+    <div class="col-12">
+        <h3>Tables</h3>
+
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Table Name</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for table in tables %}
+                    <tr>
+                        <td>
+                            <strong>{{ table }}</strong>
+                        </td>
+                        <td>
+                            <div class="btn-group" role="group">
+                                <a
+                                    href="/table/{{ table }}/content"
+                                    class="btn btn-sm btn-primary"
+                                    >Browse</a
+                                >
+                                <a
+                                    href="/table/{{ table }}/structure"
+                                    class="btn btn-sm btn-info"
+                                    >Structure</a
+                                >
+                                <a
+                                    href="/table/{{ table }}/query"
+                                    class="btn btn-sm btn-secondary"
+                                    >Query</a
+                                >
+                                {% if !readonly %}
+                                <a
+                                    href="/table/{{ table }}/insert"
+                                    class="btn btn-sm btn-success"
+                                    >Insert</a
+                                >
+                                <div class="btn-group" role="group">
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                        data-toggle="dropdown"
+                                    >
+                                        More
+                                    </button>
+                                    <div class="dropdown-menu">
+                                        <a
+                                            class="dropdown-item"
+                                            href="/table/{{ table }}/export"
+                                            >Export</a
+                                        >
+                                        <a
+                                            class="dropdown-item"
+                                            href="/table/{{ table }}/import"
+                                            >Import</a
+                                        >
+                                        <div class="dropdown-divider"></div>
+                                        <a
+                                            class="dropdown-item text-danger"
+                                            href="#"
+                                            onclick="confirmDropTable('{{ table }}')"
+                                            >Drop Table</a
+                                        >
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="2" class="text-center">
+                            <div class="alert alert-info mb-0">
+                                <h5>No tables found</h5>
+                                <p class="mb-0">
+                                    This database doesn't contain any tables
+                                    yet.
+                                </p>
+                                {% if !readonly %}
+                                <p class="mb-0 mt-2">
+                                    You can create a new table by clicking the
+                                    "Create" button in the header.
+                                </p>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% if !readonly %}
+<!-- Drop Table Modal -->
+<div class="modal fade" id="dropTableModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Drop Table</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to drop the table
+                    <strong id="tableToDropName"></strong>?
+                </p>
+                <p class="text-danger">
+                    This action cannot be undone and all data will be lost!
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-dismiss="modal"
+                >
+                    Cancel
+                </button>
+                <form id="dropTableForm" method="post" style="display: inline">
+                    <button type="submit" class="btn btn-danger">
+                        Drop Table
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function confirmDropTable(tableName) {
+        document.getElementById("tableToDropName").textContent = tableName;
+        document.getElementById("dropTableForm").action =
+            "/table/" + tableName + "/drop";
+        $("#dropTableModal").modal("show");
+    }
+</script>
+{% endif %} {% endblock %}

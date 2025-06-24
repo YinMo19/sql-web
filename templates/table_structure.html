@@ -1,0 +1,352 @@
+{% extends "base.html" %} {% block title %}{{ database_name }} - {{ table.name
+}} Structure{% endblock %} {% block content_title %}<a href="/"
+    >{{ database_name }}</a
+>
+- {{ table.name }} Structure{% endblock %} {% block sidebar %}
+<h4>{{ table.name }}</h4>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table.name }}/content">Content</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link active" href="/table/{{ table.name }}/structure"
+            >Structure</a
+        >
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table.name }}/query">Query</a>
+    </li>
+    {% if !readonly %}
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table.name }}/insert">Insert</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table.name }}/export">Export</a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="/table/{{ table.name }}/import">Import</a>
+    </li>
+    {% endif %}
+</ul>
+
+<hr />
+
+<h5>Other Tables</h5>
+<ul class="nav nav-pills nav-stacked">
+    <li class="nav-item">
+        <a class="nav-link" href="/tables">All Tables</a>
+    </li>
+</ul>
+{% endblock %} {% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h3>Table Structure</h3>
+    {% if !readonly %}
+    <div>
+        <a
+            href="/table/{{ table.name }}/add-column"
+            class="btn btn-sm btn-success"
+            >Add Column</a
+        >
+        <a href="/table/{{ table.name }}/add-index" class="btn btn-sm btn-info"
+            >Add Index</a
+        >
+    </div>
+    {% endif %}
+</div>
+
+<!-- Columns Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5>Columns</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Null</th>
+                        <th>Default</th>
+                        <th>Key</th>
+                        {% if !readonly %}
+                        <th>Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for column in table.columns %}
+                    <tr>
+                        <td><strong>{{ column.name }}</strong></td>
+                        <td><code>{{ column.data_type }}</code></td>
+                        <td>
+                            {% if column.nullable %}
+                            <span class="badge badge-warning">YES</span>
+                            {% else %}
+                            <span class="badge badge-success">NO</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if column.has_default %}
+                            <code>{{ column.default_value }}</code>
+                            {% else %}
+                            <span class="text-muted">None</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if column.is_primary_key %}
+                            <span class="badge badge-primary">PRI</span>
+                            {% endif %} {% if column.is_auto_increment %}
+                            <span class="badge badge-info">AUTO</span>
+                            {% endif %}
+                        </td>
+                        {% if !readonly %}
+                        <td>
+                            <div class="btn-group" role="group">
+                                <a
+                                    href="/table/{{ table.name }}/rename-column?column={{ column.name }}"
+                                    class="btn btn-xs btn-outline-primary"
+                                    >Rename</a
+                                >
+                                <button
+                                    type="button"
+                                    class="btn btn-xs btn-outline-danger"
+                                    onclick="confirmDropColumn('{{ table.name }}', '{{ column.name }}')"
+                                >
+                                    Drop
+                                </button>
+                            </div>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td
+                            colspan="{% if !readonly %}6{% else %}5{% endif %}"
+                            class="text-center text-muted"
+                        >
+                            No columns found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Indexes Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5>Indexes</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Columns</th>
+                        <th>Unique</th>
+                        <th>Type</th>
+                        {% if !readonly %}
+                        <th>Actions</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for index in table.indexes %}
+                    <tr>
+                        <td><strong>{{ index.name }}</strong></td>
+                        <td><code>{{ index.columns | join(", ") }}</code></td>
+                        <td>
+                            {% if index.unique %}
+                            <span class="badge badge-success">YES</span>
+                            {% else %}
+                            <span class="badge badge-secondary">NO</span>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ index.index_type }}</code></td>
+                        {% if !readonly %}
+                        <td>
+                            <button
+                                type="button"
+                                class="btn btn-xs btn-outline-danger"
+                                onclick="confirmDropIndex('{{ table.name }}', '{{ index.name }}')"
+                            >
+                                Drop
+                            </button>
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td
+                            colspan="{% if !readonly %}5{% else %}4{% endif %}"
+                            class="text-center text-muted"
+                        >
+                            No indexes found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Foreign Keys Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5>Foreign Keys</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Column</th>
+                        <th>References</th>
+                        <th>On Delete</th>
+                        <th>On Update</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for fk in table.foreign_keys %}
+                    <tr>
+                        <td><strong>{{ fk.name }}</strong></td>
+                        <td><code>{{ fk.column }}</code></td>
+                        <td>
+                            <code
+                                >{{ fk.referenced_table }}.{{
+                                fk.referenced_column }}</code
+                            >
+                        </td>
+                        <td><code>{{ fk.on_delete }}</code></td>
+                        <td><code>{{ fk.on_update }}</code></td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">
+                            No foreign keys found.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Create SQL Section -->
+{% if table.create_sql != "" %}
+<div class="card">
+    <div class="card-header">
+        <h5>CREATE TABLE Statement</h5>
+    </div>
+    <div class="card-body">
+        <pre><code>{{ table.create_sql }}</code></pre>
+    </div>
+</div>
+{% endif %} {% if !readonly %}
+<!-- Drop Column Modal -->
+<div class="modal fade" id="dropColumnModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Drop Column</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to drop the column
+                    <strong id="columnToDropName"></strong>?
+                </p>
+                <p class="text-danger">
+                    This action cannot be undone and all data in this column
+                    will be lost!
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-dismiss="modal"
+                >
+                    Cancel
+                </button>
+                <form id="dropColumnForm" method="post" style="display: inline">
+                    <input
+                        type="hidden"
+                        name="column_name"
+                        id="columnToDropInput"
+                    />
+                    <button type="submit" class="btn btn-danger">
+                        Drop Column
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Drop Index Modal -->
+<div class="modal fade" id="dropIndexModal" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Drop Index</h5>
+                <button type="button" class="close" data-dismiss="modal">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p>
+                    Are you sure you want to drop the index
+                    <strong id="indexToDropName"></strong>?
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button
+                    type="button"
+                    class="btn btn-secondary"
+                    data-dismiss="modal"
+                >
+                    Cancel
+                </button>
+                <form id="dropIndexForm" method="post" style="display: inline">
+                    <input
+                        type="hidden"
+                        name="index_name"
+                        id="indexToDropInput"
+                    />
+                    <button type="submit" class="btn btn-danger">
+                        Drop Index
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    function confirmDropColumn(tableName, columnName) {
+        document.getElementById("columnToDropName").textContent = columnName;
+        document.getElementById("columnToDropInput").value = columnName;
+        document.getElementById("dropColumnForm").action =
+            "/table/" + tableName + "/drop-column";
+        $("#dropColumnModal").modal("show");
+    }
+
+    function confirmDropIndex(tableName, indexName) {
+        document.getElementById("indexToDropName").textContent = indexName;
+        document.getElementById("indexToDropInput").value = indexName;
+        document.getElementById("dropIndexForm").action =
+            "/table/" + tableName + "/drop-index";
+        $("#dropIndexModal").modal("show");
+    }
+</script>
+{% endif %} {% endblock %}

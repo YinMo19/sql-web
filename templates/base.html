@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+    <head>
+        <title>
+            SQL Web: {% block title %}{{ database_name }}{% endblock %}
+        </title>
+        <meta charset="utf-8" />
+        <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex" />
+        <link
+            rel="stylesheet"
+            type="text/css"
+            href="/static/css/bootstrap.min.css"
+        />
+        <link
+            rel="stylesheet"
+            type="text/css"
+            href="/static/css/sqlbrowse.css"
+        />
+        <link
+            rel="stylesheet"
+            type="text/css"
+            href="/static/css/syntax-highlight.css"
+        />
+        <style type="text/css">
+            @media (max-width: 1200px) {
+                h1 {
+                    font-size: 1.7rem;
+                }
+                h1 small {
+                    font-size: 0.7rem;
+                }
+                h3 {
+                    font-size: 1.2rem;
+                }
+                ul.nav li {
+                    font-size: 0.9rem;
+                }
+            }
+        </style>
+        {% block extra_head %}{% endblock %}
+        <script
+            src="/static/js/jquery-1.11.0.min.js"
+            type="text/javascript"
+        ></script>
+        <script src="/static/js/bootstrap.bundle.min.js"></script>
+        <script src="/static/js/app.js" type="text/javascript"></script>
+        <script type="text/javascript">
+            $(function () {
+                App.initialize();
+            });
+        </script>
+        {% block extra_scripts %}{% endblock %}
+    </head>
+
+    <body class="{% block body_class %}{% endblock %}">
+        <div class="container-fluid">
+            {% block page_header %}
+            <div class="page-header">
+                {% block content_header %} {% if readonly %}
+                <a class="btn btn-sm btn-secondary float-right" href="/query"
+                    >Query</a
+                >
+                {% else %}
+                <form
+                    action="/create-table"
+                    class="form-inline float-right"
+                    method="post"
+                    style="margin-top: 10px"
+                >
+                    <input
+                        class="form-control form-control-sm"
+                        name="table_name"
+                        placeholder="new_table_name"
+                    />
+                    <button class="btn btn-primary btn-sm" type="submit">
+                        Create
+                    </button>
+                    &nbsp;
+                    <a class="btn btn-sm btn-secondary" href="/query">Query</a>
+                </form>
+                {% endif %} {% endblock %}
+                <h1>{% block content_title %}{% endblock %}</h1>
+            </div>
+            {% endblock %}
+            <div class="row">
+                <div class="col-3" id="sidebar">
+                    {% block sidebar %}{% endblock %}
+                </div>
+                <div class="col-9" id="content">
+                    {% for message in flash_messages %}
+                    <div
+                        class="alert alert-{{ message.category }} alert-dismissable"
+                    >
+                        <button
+                            type="button"
+                            class="close"
+                            data-dismiss="alert"
+                            aria-hidden="true"
+                        >
+                            &times;
+                        </button>
+                        <p>{{ message.message }}</p>
+                    </div>
+                    {% endfor %} {% block content %}{% endblock %}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-9 offset-3">
+                    <footer>
+                        <hr />
+                        <p>
+                            Web-based SQL database browser
+                            <span
+                                >v{% if version != "" %}{{ version }}{% else
+                                %}0.1.0{% endif %}</span
+                            >, powered by
+                            <a href="https://rocket.rs/">Rocket</a> and
+                            <a href="https://github.com/launchbadge/sqlx"
+                                >SQLx</a
+                            >. Built with Rust ❤️
+                        </p>
+                    </footer>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

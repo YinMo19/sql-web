@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+    <head>
+        <title>SQL Web - Query</title>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="stylesheet" href="/static/css/bootstrap.min.css" />
+        <link rel="stylesheet" href="/static/css/sqlbrowse.css" />
+    </head>
+    <body>
+        <div class="container-fluid">
+            <div class="page-header">
+                <h1><a href="/">{{ database_name }}</a> - Query</h1>
+            </div>
+
+            <div class="row">
+                <div class="col-3" id="sidebar">
+                    <ul class="nav nav-pills nav-stacked">
+                        <li class="nav-item">
+                            <a class="nav-link" href="/">Overview</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="/query">Query</a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="col-9" id="content">
+                    {% if error.len() > 0 %}
+                    <div class="alert alert-danger">{{ error }}</div>
+                    {% endif %}
+
+                    <form action="/query" method="post">
+                        <div class="form-group">
+                            <textarea
+                                class="form-control"
+                                name="sql"
+                                rows="6"
+                                placeholder="Enter your SQL query here..."
+                            >
+{{ sql }}</textarea
+                            >
+                        </div>
+                        <button class="btn btn-primary" type="submit">
+                            Execute
+                        </button>
+                        {% if has_result %}
+                        <button
+                            class="btn btn-secondary"
+                            name="export_json"
+                            type="submit"
+                        >
+                            Export JSON
+                        </button>
+                        <button
+                            class="btn btn-secondary"
+                            name="export_csv"
+                            type="submit"
+                        >
+                            Export CSV
+                        </button>
+                        {% endif %}
+                    </form>
+
+                    <hr />
+
+                    {% if has_result %} {% if rows_affected_display.len() > 0 %}
+                    <p>
+                        Rows affected: <code>{{ rows_affected_display }}</code>
+                    </p>
+                    {% endif %} {% if columns.len() > 0 %} {% if rows.len() == 0
+                    %}
+                    <p>Empty result set.</p>
+                    {% else %}
+                    <h3>Results ({{ rows.len() }} rows)</h3>
+                    <div class="table-responsive">
+                        <table class="table table-striped table-sm">
+                            <thead>
+                                <tr>
+                                    {% for column in columns %}
+                                    <th>{{ column }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in rows %}
+                                <tr>
+                                    {% for value in row %}
+                                    <td>
+                                        {% if value == "NULL" %}
+                                        <code>NULL</code>
+                                        {% else %} {{ value }} {% endif %}
+                                    </td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% endif %} {% endif %} {% endif %}
+                </div>
+            </div>
+
+            <footer class="mt-5">
+                <hr />
+                <p class="text-center text-muted">
+                    SQL Web - A database browser built with Rust and Rocket
+                </p>
+            </footer>
+        </div>
+
+        <script src="/static/js/jquery-1.11.0.min.js"></script>
+        <script src="/static/js/bootstrap.bundle.min.js"></script>
+    </body>
+</html>
