@@ -7,7 +7,6 @@ use std::{
 use anyhow::Context;
 use axum::Router;
 use clap::Parser;
-use sqlx::AnyPool;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use url::Url;
 use uuid::Uuid;
@@ -17,7 +16,7 @@ mod assets;
 mod config;
 mod models;
 
-use config::DatabaseConfig;
+use config::{DatabaseConfig, DatabasePool};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "sql-web")]
@@ -60,8 +59,9 @@ pub struct Args {
 pub struct AppState {
     pub args: Args,
     pub db_config: DatabaseConfig,
-    pub pool: AnyPool,
+    pub pool: DatabasePool,
     pub auth_token: String,
+    pub auth_password: String,
 }
 
 pub type SharedState = Arc<AppState>;
@@ -71,16 +71,16 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     init_tracing(args.debug);
-    sqlx::any::install_default_drivers();
 
     let database_url = resolve_database_url(&args)?;
     let mut db_config = DatabaseConfig::from_url(&database_url)
         .map_err(|error| anyhow::anyhow!("Invalid database URL: {error}"))?;
     db_config.readonly = db_config.readonly || args.readonly;
 
-    let pool = AnyPool::connect(&db_config.url)
+    let pool = DatabasePool::connect(&db_config)
         .await
         .context("Failed to connect to database")?;
+    let (auth_password, generated_password) = runtime_password();
 
     let addr: SocketAddr = format!("{}:{}", args.host, args.port)
         .parse()
@@ -91,21 +91,34 @@ async fn main() -> anyhow::Result<()> {
         db_config,
         pool,
         auth_token: Uuid::new_v4().to_string(),
+        auth_password: auth_password.clone(),
     });
 
     let app = Router::new()
         .nest("/api", api::router(state.clone()))
         .fallback(assets::serve)
-        .with_state(state);
+        .with_state(state.clone());
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("Failed to bind to {addr}"))?;
 
     tracing::info!("sql-web listening on http://{addr}");
+    if generated_password {
+        tracing::info!("one-time login password: {auth_password}");
+    } else {
+        tracing::info!("using SQL_WEB_PASSWORD for login");
+    }
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+fn runtime_password() -> (String, bool) {
+    match std::env::var("SQL_WEB_PASSWORD") {
+        Ok(password) => (password, false),
+        Err(_) => (Uuid::new_v4().simple().to_string(), true),
+    }
 }
 
 fn resolve_database_url(args: &Args) -> anyhow::Result<String> {

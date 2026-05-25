@@ -59,7 +59,7 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>SQL Web</CardTitle>
-          <p className="text-sm text-muted-foreground">输入密码访问数据库管理页面。SQLite 连接会自动进入。</p>
+          <p className="text-sm text-muted-foreground">输入本次命令行输出的一次性密码。</p>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={submit}>

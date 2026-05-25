@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlx::{AnyPool, Column, Row};
+use sqlx::{Column, MySqlPool, PgPool, Row, SqlitePool};
 use std::collections::BTreeMap;
 use url::Url;
 
@@ -49,6 +49,23 @@ impl DatabaseConfig {
     }
 }
 
+#[derive(Clone)]
+pub enum DatabasePool {
+    Sqlite(SqlitePool),
+    Mysql(MySqlPool),
+    Postgres(PgPool),
+}
+
+impl DatabasePool {
+    pub async fn connect(config: &DatabaseConfig) -> Result<Self, sqlx::Error> {
+        match config.database_type {
+            DatabaseType::Sqlite => Ok(Self::Sqlite(SqlitePool::connect(&config.url).await?)),
+            DatabaseType::Mysql => Ok(Self::Mysql(MySqlPool::connect(&config.url).await?)),
+            DatabaseType::Postgres => Ok(Self::Postgres(PgPool::connect(&config.url).await?)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct DatabaseInfo {
     pub filename: Option<String>,
@@ -73,12 +90,12 @@ impl DatabaseInfo {
 }
 
 pub struct DatabaseManager<'a> {
-    pool: &'a AnyPool,
+    pool: &'a DatabasePool,
     pub config: DatabaseConfig,
 }
 
 impl<'a> DatabaseManager<'a> {
-    pub fn new(pool: &'a AnyPool, config: DatabaseConfig) -> Self {
+    pub fn new(pool: &'a DatabasePool, config: DatabaseConfig) -> Self {
         Self { pool, config }
     }
 
@@ -137,17 +154,17 @@ impl<'a> DatabaseManager<'a> {
     }
 
     pub async fn get_tables(&self) -> Result<Vec<String>, sqlx::Error> {
-        match self.config.database_type {
-            DatabaseType::Sqlite => {
+        match self.pool {
+            DatabasePool::Sqlite(pool) => {
                 let rows = sqlx::query(
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
                 )
-                .fetch_all(self.pool)
+                .fetch_all(pool)
                 .await?;
                 rows.into_iter().map(|row| row.try_get("name")).collect()
             }
-            DatabaseType::Mysql => {
-                let rows = sqlx::query("SHOW TABLES").fetch_all(self.pool).await?;
+            DatabasePool::Mysql(pool) => {
+                let rows = sqlx::query("SHOW TABLES").fetch_all(pool).await?;
                 let mut tables = Vec::new();
                 for row in rows {
                     if let Some(column) = row.columns().first() {
@@ -156,11 +173,11 @@ impl<'a> DatabaseManager<'a> {
                 }
                 Ok(tables)
             }
-            DatabaseType::Postgres => {
+            DatabasePool::Postgres(pool) => {
                 let rows = sqlx::query(
                     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
                 )
-                .fetch_all(self.pool)
+                .fetch_all(pool)
                 .await?;
                 rows.into_iter()
                     .map(|row| row.try_get("tablename"))
@@ -178,11 +195,14 @@ impl<'a> DatabaseManager<'a> {
     }
 
     async fn get_sqlite_table_info(&self, table_name: &str) -> Result<TableInfo, sqlx::Error> {
+        let DatabasePool::Sqlite(pool) = self.pool else {
+            unreachable!()
+        };
         let sql = format!(
             "PRAGMA table_info({})",
             self.config.quote_identifier(table_name)
         );
-        let rows = sqlx::query(&sql).fetch_all(self.pool).await?;
+        let rows = sqlx::query(&sql).fetch_all(pool).await?;
 
         let mut columns = Vec::new();
         for row in rows {
@@ -202,8 +222,11 @@ impl<'a> DatabaseManager<'a> {
     }
 
     async fn get_mysql_table_info(&self, table_name: &str) -> Result<TableInfo, sqlx::Error> {
+        let DatabasePool::Mysql(pool) = self.pool else {
+            unreachable!()
+        };
         let sql = format!("DESCRIBE {}", self.config.quote_identifier(table_name));
-        let rows = sqlx::query(&sql).fetch_all(self.pool).await?;
+        let rows = sqlx::query(&sql).fetch_all(pool).await?;
 
         let mut columns = Vec::new();
         for row in rows {
@@ -225,6 +248,9 @@ impl<'a> DatabaseManager<'a> {
     }
 
     async fn get_postgres_table_info(&self, table_name: &str) -> Result<TableInfo, sqlx::Error> {
+        let DatabasePool::Postgres(pool) = self.pool else {
+            unreachable!()
+        };
         let rows = sqlx::query(
             r#"
             SELECT
@@ -249,7 +275,7 @@ impl<'a> DatabaseManager<'a> {
             "#,
         )
         .bind(table_name)
-        .fetch_all(self.pool)
+        .fetch_all(pool)
         .await?;
 
         let mut columns = Vec::new();
@@ -272,39 +298,10 @@ impl<'a> DatabaseManager<'a> {
     }
 
     pub async fn execute_query(&self, sql: &str) -> Result<QueryResult, sqlx::Error> {
-        if returns_rows(sql) {
-            let rows = sqlx::query(sql).fetch_all(self.pool).await?;
-            let columns = rows
-                .first()
-                .map(|row| {
-                    row.columns()
-                        .iter()
-                        .map(|col| col.name().to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let mut result_rows = Vec::new();
-            for row in rows {
-                let mut row_data = Vec::new();
-                for i in 0..row.columns().len() {
-                    row_data.push(any_cell_to_string(&row, i));
-                }
-                result_rows.push(row_data);
-            }
-
-            Ok(QueryResult {
-                columns,
-                rows: result_rows,
-                rows_affected: None,
-            })
-        } else {
-            let result = sqlx::query(sql).execute(self.pool).await?;
-            Ok(QueryResult {
-                columns: vec![],
-                rows: vec![],
-                rows_affected: Some(result.rows_affected()),
-            })
+        match self.pool {
+            DatabasePool::Sqlite(pool) => execute_sqlite_query(pool, sql).await,
+            DatabasePool::Mysql(pool) => execute_mysql_query(pool, sql).await,
+            DatabasePool::Postgres(pool) => execute_postgres_query(pool, sql).await,
         }
     }
 
@@ -313,8 +310,20 @@ impl<'a> DatabaseManager<'a> {
             "SELECT COUNT(*) as count FROM {}",
             self.config.quote_identifier(table_name)
         );
-        let row = sqlx::query(&sql).fetch_one(self.pool).await?;
-        row.try_get("count")
+        match self.pool {
+            DatabasePool::Sqlite(pool) => {
+                let row = sqlx::query(&sql).fetch_one(pool).await?;
+                row.try_get("count")
+            }
+            DatabasePool::Mysql(pool) => {
+                let row = sqlx::query(&sql).fetch_one(pool).await?;
+                row.try_get("count")
+            }
+            DatabasePool::Postgres(pool) => {
+                let row = sqlx::query(&sql).fetch_one(pool).await?;
+                row.try_get("count")
+            }
+        }
     }
 
     pub async fn get_table_rows(
@@ -361,18 +370,21 @@ impl<'a> DatabaseManager<'a> {
     }
 
     async fn get_sqlite_indexes(&self, table_name: &str) -> Result<Vec<IndexInfo>, sqlx::Error> {
+        let DatabasePool::Sqlite(pool) = self.pool else {
+            unreachable!()
+        };
         let sql = format!(
             "PRAGMA index_list({})",
             self.config.quote_identifier(table_name)
         );
-        let rows = sqlx::query(&sql).fetch_all(self.pool).await?;
+        let rows = sqlx::query(&sql).fetch_all(pool).await?;
 
         let mut indexes = Vec::new();
         for row in rows {
             let name: String = row.try_get("name")?;
             let unique: i32 = row.try_get("unique")?;
             let column_sql = format!("PRAGMA index_info({})", self.config.quote_identifier(&name));
-            let column_rows = sqlx::query(&column_sql).fetch_all(self.pool).await?;
+            let column_rows = sqlx::query(&column_sql).fetch_all(pool).await?;
             let mut columns = Vec::new();
             for column_row in column_rows {
                 columns.push(column_row.try_get("name")?);
@@ -388,11 +400,14 @@ impl<'a> DatabaseManager<'a> {
     }
 
     async fn get_mysql_indexes(&self, table_name: &str) -> Result<Vec<IndexInfo>, sqlx::Error> {
+        let DatabasePool::Mysql(pool) = self.pool else {
+            unreachable!()
+        };
         let sql = format!(
             "SHOW INDEX FROM {}",
             self.config.quote_identifier(table_name)
         );
-        let rows = sqlx::query(&sql).fetch_all(self.pool).await?;
+        let rows = sqlx::query(&sql).fetch_all(pool).await?;
         let mut map: BTreeMap<String, IndexInfo> = BTreeMap::new();
 
         for row in rows {
@@ -411,11 +426,14 @@ impl<'a> DatabaseManager<'a> {
     }
 
     async fn get_postgres_indexes(&self, table_name: &str) -> Result<Vec<IndexInfo>, sqlx::Error> {
+        let DatabasePool::Postgres(pool) = self.pool else {
+            unreachable!()
+        };
         let rows = sqlx::query(
             "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = $1 ORDER BY indexname",
         )
         .bind(table_name)
-        .fetch_all(self.pool)
+        .fetch_all(pool)
         .await?;
 
         let mut indexes = Vec::new();
@@ -494,6 +512,114 @@ pub fn is_write_operation(sql: &str) -> bool {
         || sql_upper.starts_with("TRUNCATE")
 }
 
+async fn execute_sqlite_query(pool: &SqlitePool, sql: &str) -> Result<QueryResult, sqlx::Error> {
+    if returns_rows(sql) {
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+        let columns = rows
+            .first()
+            .map(|row| {
+                row.columns()
+                    .iter()
+                    .map(|col| col.name().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut result_rows = Vec::new();
+        for row in rows {
+            let mut row_data = Vec::new();
+            for i in 0..row.columns().len() {
+                row_data.push(sqlite_cell_to_string(&row, i));
+            }
+            result_rows.push(row_data);
+        }
+        Ok(QueryResult {
+            columns,
+            rows: result_rows,
+            rows_affected: None,
+        })
+    } else {
+        let result = sqlx::query(sql).execute(pool).await?;
+        Ok(QueryResult {
+            columns: vec![],
+            rows: vec![],
+            rows_affected: Some(result.rows_affected()),
+        })
+    }
+}
+
+async fn execute_mysql_query(pool: &MySqlPool, sql: &str) -> Result<QueryResult, sqlx::Error> {
+    if returns_rows(sql) {
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+        let columns = rows
+            .first()
+            .map(|row| {
+                row.columns()
+                    .iter()
+                    .map(|col| col.name().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut result_rows = Vec::new();
+        for row in rows {
+            let mut row_data = Vec::new();
+            for i in 0..row.columns().len() {
+                row_data.push(mysql_cell_to_string(&row, i));
+            }
+            result_rows.push(row_data);
+        }
+        Ok(QueryResult {
+            columns,
+            rows: result_rows,
+            rows_affected: None,
+        })
+    } else {
+        let result = sqlx::query(sql).execute(pool).await?;
+        Ok(QueryResult {
+            columns: vec![],
+            rows: vec![],
+            rows_affected: Some(result.rows_affected()),
+        })
+    }
+}
+
+async fn execute_postgres_query(pool: &PgPool, sql: &str) -> Result<QueryResult, sqlx::Error> {
+    if returns_rows(sql) {
+        let rows = sqlx::query(sql).fetch_all(pool).await?;
+        let columns = rows
+            .first()
+            .map(|row| {
+                row.columns()
+                    .iter()
+                    .map(|col| col.name().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut result_rows = Vec::new();
+        for row in rows {
+            let mut row_data = Vec::new();
+            for i in 0..row.columns().len() {
+                row_data.push(postgres_cell_to_string(&row, i));
+            }
+            result_rows.push(row_data);
+        }
+        Ok(QueryResult {
+            columns,
+            rows: result_rows,
+            rows_affected: None,
+        })
+    } else {
+        let result = sqlx::query(sql).execute(pool).await?;
+        Ok(QueryResult {
+            columns: vec![],
+            rows: vec![],
+            rows_affected: Some(result.rows_affected()),
+        })
+    }
+}
+
 fn returns_rows(sql: &str) -> bool {
     let sql_upper = sql.trim_start().to_uppercase();
     sql_upper.starts_with("SELECT")
@@ -503,7 +629,103 @@ fn returns_rows(sql: &str) -> bool {
         || sql_upper.starts_with("PRAGMA")
 }
 
-fn any_cell_to_string(row: &sqlx::any::AnyRow, index: usize) -> Option<String> {
+fn sqlite_cell_to_string(row: &sqlx::sqlite::SqliteRow, index: usize) -> Option<String> {
+    row.try_get::<Option<String>, _>(index)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            row.try_get::<Option<i64>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<f64>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<Vec<u8>>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| String::from_utf8_lossy(&v).to_string())
+        })
+}
+
+fn mysql_cell_to_string(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<String> {
+    row.try_get::<Option<String>, _>(index)
+        .ok()
+        .flatten()
+        .or_else(|| {
+            row.try_get::<Option<i64>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<i32>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<u64>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<u32>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<f64>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<f32>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<bool>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<chrono::NaiveDateTime>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<chrono::NaiveDate>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<chrono::NaiveTime>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<Vec<u8>>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| String::from_utf8_lossy(&v).to_string())
+        })
+}
+
+fn postgres_cell_to_string(row: &sqlx::postgres::PgRow, index: usize) -> Option<String> {
     row.try_get::<Option<String>, _>(index)
         .ok()
         .flatten()
@@ -536,6 +758,42 @@ fn any_cell_to_string(row: &sqlx::any::AnyRow, index: usize) -> Option<String> {
                 .ok()
                 .flatten()
                 .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<chrono::NaiveDateTime>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<chrono::NaiveDate>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<chrono::NaiveTime>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_rfc3339())
+        })
+        .or_else(|| {
+            row.try_get::<Option<serde_json::Value>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| v.to_string())
+        })
+        .or_else(|| {
+            row.try_get::<Option<Vec<u8>>, _>(index)
+                .ok()
+                .flatten()
+                .map(|v| String::from_utf8_lossy(&v).to_string())
         })
 }
 

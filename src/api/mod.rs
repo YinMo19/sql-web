@@ -55,7 +55,7 @@ async fn require_auth(
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    if is_sqlite(&state) || is_authenticated(request.headers(), &state) {
+    if is_authenticated(request.headers(), &state) {
         next.run(request).await
     } else {
         ApiError::new(StatusCode::UNAUTHORIZED, "Authentication required").into_response()
@@ -114,13 +114,8 @@ async fn login(
     State(state): State<SharedState>,
     Json(request): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    if !is_sqlite(&state) {
-        let expected_password =
-            std::env::var("SQL_WEB_PASSWORD").unwrap_or_else(|_| "admin".to_string());
-
-        if request.password != expected_password {
-            return Err(ApiError::new(StatusCode::UNAUTHORIZED, "Invalid password"));
-        }
+    if request.password != state.auth_password {
+        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "Invalid password"));
     }
 
     let mut headers = HeaderMap::new();
@@ -158,7 +153,7 @@ async fn logout() -> impl IntoResponse {
 
 async fn session(State(state): State<SharedState>, headers: HeaderMap) -> Json<AuthResponse> {
     Json(AuthResponse {
-        authenticated: is_sqlite(&state) || is_authenticated(&headers, &state),
+        authenticated: is_authenticated(&headers, &state),
     })
 }
 
@@ -589,10 +584,6 @@ fn build_where_clause(config: &DatabaseConfig, conditions: &HashMap<String, Stri
         })
         .collect::<Vec<_>>()
         .join(" AND ")
-}
-
-fn is_sqlite(state: &AppState) -> bool {
-    matches!(state.db_config.database_type, DatabaseType::Sqlite)
 }
 
 fn is_authenticated(headers: &HeaderMap, state: &AppState) -> bool {
