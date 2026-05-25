@@ -1,6 +1,10 @@
+use futures::TryStreamExt;
 use serde::{Deserialize, Serialize};
-use sqlx::{Column, MySqlPool, PgPool, Row, SqlitePool};
-use std::collections::BTreeMap;
+use sqlx::{
+    Column, MySqlPool, PgPool, Row, SqlitePool, TypeInfo, mysql::MySqlPoolOptions,
+    postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
+};
+use std::{collections::BTreeMap, time::Duration};
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +54,13 @@ impl DatabaseConfig {
 }
 
 #[derive(Clone)]
+pub struct PoolConfig {
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub connect_timeout_seconds: u64,
+}
+
+#[derive(Clone)]
 pub enum DatabasePool {
     Sqlite(SqlitePool),
     Mysql(MySqlPool),
@@ -57,11 +68,38 @@ pub enum DatabasePool {
 }
 
 impl DatabasePool {
-    pub async fn connect(config: &DatabaseConfig) -> Result<Self, sqlx::Error> {
+    pub async fn connect(
+        config: &DatabaseConfig,
+        pool_config: &PoolConfig,
+    ) -> Result<Self, sqlx::Error> {
+        let min_connections = pool_config.min_connections.min(pool_config.max_connections);
+        let acquire_timeout = Duration::from_secs(pool_config.connect_timeout_seconds);
+
         match config.database_type {
-            DatabaseType::Sqlite => Ok(Self::Sqlite(SqlitePool::connect(&config.url).await?)),
-            DatabaseType::Mysql => Ok(Self::Mysql(MySqlPool::connect(&config.url).await?)),
-            DatabaseType::Postgres => Ok(Self::Postgres(PgPool::connect(&config.url).await?)),
+            DatabaseType::Sqlite => Ok(Self::Sqlite(
+                SqlitePoolOptions::new()
+                    .max_connections(pool_config.max_connections)
+                    .min_connections(min_connections)
+                    .acquire_timeout(acquire_timeout)
+                    .connect(&config.url)
+                    .await?,
+            )),
+            DatabaseType::Mysql => Ok(Self::Mysql(
+                MySqlPoolOptions::new()
+                    .max_connections(pool_config.max_connections)
+                    .min_connections(min_connections)
+                    .acquire_timeout(acquire_timeout)
+                    .connect(&config.url)
+                    .await?,
+            )),
+            DatabaseType::Postgres => Ok(Self::Postgres(
+                PgPoolOptions::new()
+                    .max_connections(pool_config.max_connections)
+                    .min_connections(min_connections)
+                    .acquire_timeout(acquire_timeout)
+                    .connect(&config.url)
+                    .await?,
+            )),
         }
     }
 }
@@ -297,11 +335,15 @@ impl<'a> DatabaseManager<'a> {
         })
     }
 
-    pub async fn execute_query(&self, sql: &str) -> Result<QueryResult, sqlx::Error> {
+    pub async fn execute_query(
+        &self,
+        sql: &str,
+        max_rows: usize,
+    ) -> Result<QueryResult, sqlx::Error> {
         match self.pool {
-            DatabasePool::Sqlite(pool) => execute_sqlite_query(pool, sql).await,
-            DatabasePool::Mysql(pool) => execute_mysql_query(pool, sql).await,
-            DatabasePool::Postgres(pool) => execute_postgres_query(pool, sql).await,
+            DatabasePool::Sqlite(pool) => execute_sqlite_query(pool, sql, max_rows).await,
+            DatabasePool::Mysql(pool) => execute_mysql_query(pool, sql, max_rows).await,
+            DatabasePool::Postgres(pool) => execute_postgres_query(pool, sql, max_rows).await,
         }
     }
 
@@ -335,20 +377,21 @@ impl<'a> DatabaseManager<'a> {
         let page = page.max(1);
         let per_page = per_page.max(1);
         let offset = (page - 1) * per_page;
-        let total_rows = self.get_table_row_count(table_name).await?;
-        let total_pages = if total_rows == 0 {
-            1
-        } else {
-            ((total_rows as f64) / (per_page as f64)).ceil() as usize
-        };
-
         let sql = format!(
             "SELECT * FROM {} LIMIT {} OFFSET {}",
             self.config.quote_identifier(table_name),
             per_page,
             offset
         );
-        let query_result = self.execute_query(&sql).await?;
+        let (total_rows, query_result) = tokio::try_join!(
+            self.get_table_row_count(table_name),
+            self.execute_query(&sql, per_page)
+        )?;
+        let total_pages = if total_rows == 0 {
+            1
+        } else {
+            ((total_rows as f64) / (per_page as f64)).ceil() as usize
+        };
 
         Ok(TableRows {
             name: table_name.to_string(),
@@ -359,6 +402,51 @@ impl<'a> DatabaseManager<'a> {
             per_page,
             total_pages,
         })
+    }
+
+    pub async fn get_create_table_sql(
+        &self,
+        table_name: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        match self.pool {
+            DatabasePool::Sqlite(pool) => {
+                let row =
+                    sqlx::query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?")
+                        .bind(table_name)
+                        .fetch_optional(pool)
+                        .await?;
+                Ok(row.and_then(|row| row.try_get("sql").ok()))
+            }
+            DatabasePool::Mysql(pool) => {
+                let sql = format!(
+                    "SHOW CREATE TABLE {}",
+                    self.config.quote_identifier(table_name)
+                );
+                let row = sqlx::query(&sql).fetch_optional(pool).await?;
+                Ok(row.and_then(|row| row.try_get(1).ok()))
+            }
+            DatabasePool::Postgres(pool) => {
+                let row = sqlx::query(
+                    r#"
+                    SELECT 'CREATE TABLE public.' || quote_ident(c.table_name) || E' (\n' ||
+                           string_agg(
+                               '  ' || quote_ident(c.column_name) || ' ' || c.data_type ||
+                               CASE WHEN c.character_maximum_length IS NOT NULL THEN '(' || c.character_maximum_length || ')' ELSE '' END ||
+                               CASE WHEN c.is_nullable = 'NO' THEN ' NOT NULL' ELSE '' END ||
+                               CASE WHEN c.column_default IS NOT NULL THEN ' DEFAULT ' || c.column_default ELSE '' END,
+                               E',\n' ORDER BY c.ordinal_position
+                           ) || E'\n);' AS create_sql
+                    FROM information_schema.columns c
+                    WHERE c.table_schema = 'public' AND c.table_name = $1
+                    GROUP BY c.table_name
+                    "#,
+                )
+                .bind(table_name)
+                .fetch_optional(pool)
+                .await?;
+                Ok(row.and_then(|row| row.try_get("create_sql").ok()))
+            }
+        }
     }
 
     pub async fn get_indexes(&self, table_name: &str) -> Result<Vec<IndexInfo>, sqlx::Error> {
@@ -512,27 +600,42 @@ pub fn is_write_operation(sql: &str) -> bool {
         || sql_upper.starts_with("TRUNCATE")
 }
 
-async fn execute_sqlite_query(pool: &SqlitePool, sql: &str) -> Result<QueryResult, sqlx::Error> {
+async fn execute_sqlite_query(
+    pool: &SqlitePool,
+    sql: &str,
+    max_rows: usize,
+) -> Result<QueryResult, sqlx::Error> {
     if returns_rows(sql) {
-        let rows = sqlx::query(sql).fetch_all(pool).await?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
+        let mut stream = sqlx::query(sql).fetch(pool);
+        let mut columns = Vec::new();
+        let mut kinds = Vec::new();
+        let mut result_rows = Vec::new();
+
+        while let Some(row) = stream.try_next().await? {
+            if columns.is_empty() {
+                columns = row
+                    .columns()
                     .iter()
                     .map(|col| col.name().to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let mut result_rows = Vec::new();
-        for row in rows {
-            let mut row_data = Vec::new();
-            for i in 0..row.columns().len() {
-                row_data.push(sqlite_cell_to_string(&row, i));
+                    .collect();
+                kinds = row
+                    .columns()
+                    .iter()
+                    .map(|col| cell_kind(col.type_info().name()))
+                    .collect();
             }
-            result_rows.push(row_data);
+
+            if result_rows.len() >= max_rows {
+                break;
+            }
+
+            result_rows.push(
+                (0..row.columns().len())
+                    .map(|i| sqlite_cell_to_string(&row, i, kinds[i]))
+                    .collect(),
+            );
         }
+
         Ok(QueryResult {
             columns,
             rows: result_rows,
@@ -548,27 +651,42 @@ async fn execute_sqlite_query(pool: &SqlitePool, sql: &str) -> Result<QueryResul
     }
 }
 
-async fn execute_mysql_query(pool: &MySqlPool, sql: &str) -> Result<QueryResult, sqlx::Error> {
+async fn execute_mysql_query(
+    pool: &MySqlPool,
+    sql: &str,
+    max_rows: usize,
+) -> Result<QueryResult, sqlx::Error> {
     if returns_rows(sql) {
-        let rows = sqlx::query(sql).fetch_all(pool).await?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
+        let mut stream = sqlx::query(sql).fetch(pool);
+        let mut columns = Vec::new();
+        let mut kinds = Vec::new();
+        let mut result_rows = Vec::new();
+
+        while let Some(row) = stream.try_next().await? {
+            if columns.is_empty() {
+                columns = row
+                    .columns()
                     .iter()
                     .map(|col| col.name().to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let mut result_rows = Vec::new();
-        for row in rows {
-            let mut row_data = Vec::new();
-            for i in 0..row.columns().len() {
-                row_data.push(mysql_cell_to_string(&row, i));
+                    .collect();
+                kinds = row
+                    .columns()
+                    .iter()
+                    .map(|col| cell_kind(col.type_info().name()))
+                    .collect();
             }
-            result_rows.push(row_data);
+
+            if result_rows.len() >= max_rows {
+                break;
+            }
+
+            result_rows.push(
+                (0..row.columns().len())
+                    .map(|i| mysql_cell_to_string(&row, i, kinds[i]))
+                    .collect(),
+            );
         }
+
         Ok(QueryResult {
             columns,
             rows: result_rows,
@@ -584,27 +702,42 @@ async fn execute_mysql_query(pool: &MySqlPool, sql: &str) -> Result<QueryResult,
     }
 }
 
-async fn execute_postgres_query(pool: &PgPool, sql: &str) -> Result<QueryResult, sqlx::Error> {
+async fn execute_postgres_query(
+    pool: &PgPool,
+    sql: &str,
+    max_rows: usize,
+) -> Result<QueryResult, sqlx::Error> {
     if returns_rows(sql) {
-        let rows = sqlx::query(sql).fetch_all(pool).await?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
+        let mut stream = sqlx::query(sql).fetch(pool);
+        let mut columns = Vec::new();
+        let mut kinds = Vec::new();
+        let mut result_rows = Vec::new();
+
+        while let Some(row) = stream.try_next().await? {
+            if columns.is_empty() {
+                columns = row
+                    .columns()
                     .iter()
                     .map(|col| col.name().to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let mut result_rows = Vec::new();
-        for row in rows {
-            let mut row_data = Vec::new();
-            for i in 0..row.columns().len() {
-                row_data.push(postgres_cell_to_string(&row, i));
+                    .collect();
+                kinds = row
+                    .columns()
+                    .iter()
+                    .map(|col| cell_kind(col.type_info().name()))
+                    .collect();
             }
-            result_rows.push(row_data);
+
+            if result_rows.len() >= max_rows {
+                break;
+            }
+
+            result_rows.push(
+                (0..row.columns().len())
+                    .map(|i| postgres_cell_to_string(&row, i, kinds[i]))
+                    .collect(),
+            );
         }
+
         Ok(QueryResult {
             columns,
             rows: result_rows,
@@ -629,7 +762,98 @@ fn returns_rows(sql: &str) -> bool {
         || sql_upper.starts_with("PRAGMA")
 }
 
-fn sqlite_cell_to_string(row: &sqlx::sqlite::SqliteRow, index: usize) -> Option<String> {
+#[derive(Clone, Copy)]
+enum CellKind {
+    Text,
+    I64,
+    I32,
+    U64,
+    U32,
+    F64,
+    F32,
+    Bool,
+    DateTime,
+    Date,
+    Time,
+    UtcDateTime,
+    Json,
+    Bytes,
+    Unknown,
+}
+
+fn cell_kind(type_name: &str) -> CellKind {
+    let name = type_name.to_ascii_lowercase();
+    if name.contains("char")
+        || name.contains("text")
+        || name.contains("clob")
+        || name == "varchar"
+        || name == "name"
+    {
+        CellKind::Text
+    } else if name == "int8" || name == "bigint" || name.contains("bigint") {
+        CellKind::I64
+    } else if name == "int4"
+        || name == "integer"
+        || name == "int"
+        || name.contains("smallint")
+        || name == "serial"
+    {
+        CellKind::I32
+    } else if name.contains("unsigned bigint") {
+        CellKind::U64
+    } else if name.contains("unsigned") {
+        CellKind::U32
+    } else if name.contains("double") || name == "float8" || name == "real" {
+        CellKind::F64
+    } else if name.contains("float") || name == "float4" {
+        CellKind::F32
+    } else if name.contains("bool") {
+        CellKind::Bool
+    } else if name.contains("timestamptz") {
+        CellKind::UtcDateTime
+    } else if name.contains("timestamp") || name.contains("datetime") {
+        CellKind::DateTime
+    } else if name == "date" {
+        CellKind::Date
+    } else if name == "time" || name.contains("time without time zone") {
+        CellKind::Time
+    } else if name.contains("json") {
+        CellKind::Json
+    } else if name.contains("blob") || name.contains("bytea") || name.contains("binary") {
+        CellKind::Bytes
+    } else {
+        CellKind::Unknown
+    }
+}
+
+fn sqlite_cell_to_string(
+    row: &sqlx::sqlite::SqliteRow,
+    index: usize,
+    kind: CellKind,
+) -> Option<String> {
+    match kind {
+        CellKind::Text => row.try_get::<Option<String>, _>(index).ok().flatten(),
+        CellKind::I64 | CellKind::I32 | CellKind::U64 | CellKind::U32 => row
+            .try_get::<Option<i64>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::F64 | CellKind::F32 => row
+            .try_get::<Option<f64>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Bytes => row
+            .try_get::<Option<Vec<u8>>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| String::from_utf8_lossy(&v).to_string()),
+        _ => sqlite_cell_fallback(row, index),
+    }
+    .or_else(|| sqlite_cell_fallback(row, index))
+}
+
+fn sqlite_cell_fallback(row: &sqlx::sqlite::SqliteRow, index: usize) -> Option<String> {
     row.try_get::<Option<String>, _>(index)
         .ok()
         .flatten()
@@ -653,7 +877,74 @@ fn sqlite_cell_to_string(row: &sqlx::sqlite::SqliteRow, index: usize) -> Option<
         })
 }
 
-fn mysql_cell_to_string(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<String> {
+fn mysql_cell_to_string(
+    row: &sqlx::mysql::MySqlRow,
+    index: usize,
+    kind: CellKind,
+) -> Option<String> {
+    match kind {
+        CellKind::Text => row.try_get::<Option<String>, _>(index).ok().flatten(),
+        CellKind::I64 => row
+            .try_get::<Option<i64>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::I32 => row
+            .try_get::<Option<i32>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::U64 => row
+            .try_get::<Option<u64>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::U32 => row
+            .try_get::<Option<u32>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::F64 => row
+            .try_get::<Option<f64>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::F32 => row
+            .try_get::<Option<f32>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Bool => row
+            .try_get::<Option<bool>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::DateTime => row
+            .try_get::<Option<chrono::NaiveDateTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Date => row
+            .try_get::<Option<chrono::NaiveDate>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Time => row
+            .try_get::<Option<chrono::NaiveTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Bytes => row
+            .try_get::<Option<Vec<u8>>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| String::from_utf8_lossy(&v).to_string()),
+        _ => mysql_cell_fallback(row, index),
+    }
+    .or_else(|| mysql_cell_fallback(row, index))
+}
+
+fn mysql_cell_fallback(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<String> {
     row.try_get::<Option<String>, _>(index)
         .ok()
         .flatten()
@@ -725,7 +1016,74 @@ fn mysql_cell_to_string(row: &sqlx::mysql::MySqlRow, index: usize) -> Option<Str
         })
 }
 
-fn postgres_cell_to_string(row: &sqlx::postgres::PgRow, index: usize) -> Option<String> {
+fn postgres_cell_to_string(
+    row: &sqlx::postgres::PgRow,
+    index: usize,
+    kind: CellKind,
+) -> Option<String> {
+    match kind {
+        CellKind::Text => row.try_get::<Option<String>, _>(index).ok().flatten(),
+        CellKind::I64 => row
+            .try_get::<Option<i64>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::I32 | CellKind::U32 => row
+            .try_get::<Option<i32>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::F64 => row
+            .try_get::<Option<f64>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::F32 => row
+            .try_get::<Option<f32>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Bool => row
+            .try_get::<Option<bool>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::DateTime => row
+            .try_get::<Option<chrono::NaiveDateTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Date => row
+            .try_get::<Option<chrono::NaiveDate>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Time => row
+            .try_get::<Option<chrono::NaiveTime>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::UtcDateTime => row
+            .try_get::<Option<chrono::DateTime<chrono::Utc>>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_rfc3339()),
+        CellKind::Json => row
+            .try_get::<Option<serde_json::Value>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| v.to_string()),
+        CellKind::Bytes => row
+            .try_get::<Option<Vec<u8>>, _>(index)
+            .ok()
+            .flatten()
+            .map(|v| String::from_utf8_lossy(&v).to_string()),
+        _ => postgres_cell_fallback(row, index),
+    }
+    .or_else(|| postgres_cell_fallback(row, index))
+}
+
+fn postgres_cell_fallback(row: &sqlx::postgres::PgRow, index: usize) -> Option<String> {
     row.try_get::<Option<String>, _>(index)
         .ok()
         .flatten()

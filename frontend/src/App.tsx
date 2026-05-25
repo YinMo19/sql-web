@@ -278,6 +278,7 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
   const [data, setData] = useState<TableRows | null>(null)
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
+  const [pageInput, setPageInput] = useState('1')
 
   async function load() {
     try {
@@ -291,6 +292,17 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
   useEffect(() => {
     void load()
   }, [name, page])
+
+  useEffect(() => {
+    if (data) setPageInput(String(data.page))
+  }, [data?.page])
+
+  function jumpToPage(event: FormEvent) {
+    event.preventDefault()
+    const nextPage = Number.parseInt(pageInput, 10)
+    if (Number.isNaN(nextPage)) return
+    setPage(Math.min(Math.max(nextPage, 1), data?.total_pages ?? 1))
+  }
 
   if (error) return <PageError message={error} />
   if (!data) return <p className="text-sm text-muted-foreground">Loading rows...</p>
@@ -309,9 +321,14 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
         </div>
       </div>
       <DataTable columns={data.columns} rows={data.rows} previewable editable={!readonly} tableName={name} onChanged={load} />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Button variant="outline" disabled={page <= 1} onClick={() => setPage((page) => page - 1)}>Previous</Button>
-        <span className="text-sm text-muted-foreground">Page {data.page} of {data.total_pages}</span>
+        <form className="flex items-center gap-2" onSubmit={jumpToPage}>
+          <span className="text-sm text-muted-foreground">Page</span>
+          <Input className="h-8 w-20" min={1} max={data.total_pages} type="number" value={pageInput} onChange={(event) => setPageInput(event.target.value)} />
+          <span className="text-sm text-muted-foreground">of {data.total_pages}</span>
+          <Button size="sm" variant="outline" type="submit">Go</Button>
+        </form>
         <Button variant="outline" disabled={page >= data.total_pages} onClick={() => setPage((page) => page + 1)}>Next</Button>
       </div>
     </div>
@@ -383,6 +400,14 @@ function TableStructurePage({ readonly, onChanged }: { readonly: boolean; onChan
         </div>
         {!readonly && <AddColumn table={name} onChanged={() => { void load(); onChanged() }} />}
       </div>
+      {structure.create_sql && (
+        <Card>
+          <CardHeader><CardTitle>Create SQL</CardTitle></CardHeader>
+          <CardContent>
+            <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 text-xs leading-relaxed">{structure.create_sql}</pre>
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader><CardTitle>Columns</CardTitle></CardHeader>
         <CardContent><ColumnsTable table={name} columns={structure.columns} readonly={readonly} onChanged={load} /></CardContent>
@@ -488,14 +513,15 @@ function DataTable({
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
   const navigate = useNavigate()
   const hasActions = editable || previewable
+  const tableWidth = `${Math.min(Math.max(100, columns.length * 12 + (hasActions ? 12 : 0)), 200)}vw`
 
   return (
     <div className="w-full max-w-full overflow-x-auto rounded-md border bg-background">
-      <Table className="w-full table-fixed">
+      <Table className="table-fixed" style={{ width: tableWidth, maxWidth: '200vw' }}>
         <TableHeader>
           <TableRow>
-            {columns.map((column) => <TableHead className="w-48 truncate" key={column}>{column}</TableHead>)}
-            {hasActions && <TableHead className="w-40">Actions</TableHead>}
+            {columns.map((column) => <TableHead className="truncate" key={column}>{column}</TableHead>)}
+            {hasActions && <TableHead className="sticky right-0 z-20 w-40 bg-background text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.25)]">Actions</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -515,13 +541,13 @@ function DataTable({
               )}
               <TableRow>
                 {row.map((value, cellIndex) => (
-                  <TableCell className="w-48 max-w-48 truncate font-mono text-xs" title={value ?? 'NULL'} key={cellIndex}>
+                  <TableCell className="truncate font-mono text-xs" title={value ?? 'NULL'} key={cellIndex}>
                     {value ?? <span className="text-muted-foreground">NULL</span>}
                   </TableCell>
                 ))}
                 {hasActions && (
-                  <TableCell className="w-40">
-                    <div className="flex gap-2">
+                  <TableCell className="sticky right-0 z-10 w-40 bg-background shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.25)]">
+                    <div className="flex justify-end gap-2">
                       {previewable && tableName && (
                         <Button
                           size="sm"

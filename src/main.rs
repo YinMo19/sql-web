@@ -16,7 +16,7 @@ mod assets;
 mod config;
 mod models;
 
-use config::{DatabaseConfig, DatabasePool};
+use config::{DatabaseConfig, DatabasePool, PoolConfig};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "sql-web")]
@@ -46,9 +46,21 @@ pub struct Args {
     #[arg(short = 'R', long, default_value = "50")]
     pub rows_per_page: usize,
 
-    /// Rows per page for query results
+    /// Rows per page for query results and maximum rows returned by one query request
     #[arg(short = 'Q', long, default_value = "1000")]
     pub query_rows_per_page: usize,
+
+    /// Maximum database connections in the pool
+    #[arg(long, default_value = "10")]
+    pub max_connections: u32,
+
+    /// Minimum database connections kept in the pool
+    #[arg(long, default_value = "1")]
+    pub min_connections: u32,
+
+    /// Connection acquire timeout in seconds
+    #[arg(long, default_value = "10")]
+    pub connect_timeout_seconds: u64,
 
     /// Enable debug mode
     #[arg(long)]
@@ -77,7 +89,12 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("Invalid database URL: {error}"))?;
     db_config.readonly = db_config.readonly || args.readonly;
 
-    let pool = DatabasePool::connect(&db_config)
+    let pool_config = PoolConfig {
+        max_connections: args.max_connections,
+        min_connections: args.min_connections,
+        connect_timeout_seconds: args.connect_timeout_seconds,
+    };
+    let pool = DatabasePool::connect(&db_config, &pool_config)
         .await
         .context("Failed to connect to database")?;
     let (auth_password, generated_password) = runtime_password();

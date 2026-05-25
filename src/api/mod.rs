@@ -205,8 +205,14 @@ async fn table_structure(
     Path(table): Path<String>,
 ) -> Result<Json<TableStructure>, ApiError> {
     let manager = manager(&state);
-    let table_info = manager.get_table_info(&table).await?;
-    let indexes = manager.get_indexes(&table).await.unwrap_or_default();
+    let (table_info, create_sql, indexes) = tokio::join!(
+        manager.get_table_info(&table),
+        manager.get_create_table_sql(&table),
+        manager.get_indexes(&table),
+    );
+    let table_info = table_info?;
+    let create_sql = create_sql.unwrap_or_default();
+    let indexes = indexes.unwrap_or_default();
 
     let columns = table_info
         .columns
@@ -238,7 +244,7 @@ async fn table_structure(
         indexes,
         foreign_keys: vec![],
         triggers: vec![],
-        create_sql: None,
+        create_sql,
     }))
 }
 
@@ -296,21 +302,24 @@ async fn run_query(
         ));
     }
 
-    let page = request.page.unwrap_or(1);
-    let per_page = request.per_page.unwrap_or(state.args.query_rows_per_page);
-    let mut final_sql = sql.to_string();
+    let page = request.page.unwrap_or(1).max(1);
+    let per_page = request
+        .per_page
+        .unwrap_or(state.args.query_rows_per_page)
+        .clamp(1, state.args.query_rows_per_page.max(1));
+    let mut final_sql = paginated_sql(sql, page, per_page);
 
     if let Some(ordering) = request.ordering {
         let direction = if ordering < 0 { "DESC" } else { "ASC" };
         final_sql = format!(
             "SELECT * FROM ({}) AS _ ORDER BY {} {}",
-            sql.trim_end_matches(';'),
+            final_sql.trim_end_matches(';'),
             ordering.abs(),
             direction
         );
     }
 
-    let result = manager(&state).execute_query(&final_sql).await?;
+    let result = manager(&state).execute_query(&final_sql, per_page).await?;
 
     Ok(Json(QueryResponse {
         columns: result.columns,
@@ -322,6 +331,17 @@ async fn run_query(
         error: None,
         rows_affected: result.rows_affected,
     }))
+}
+
+fn paginated_sql(sql: &str, page: usize, per_page: usize) -> String {
+    let trimmed = sql.trim().trim_end_matches(';');
+    let sql_upper = trimmed.to_uppercase();
+    if sql_upper.starts_with("SELECT") || sql_upper.starts_with("WITH") {
+        let offset = (page - 1) * per_page;
+        format!("SELECT * FROM ({trimmed}) AS sql_web_query LIMIT {per_page} OFFSET {offset}")
+    } else {
+        trimmed.to_string()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -360,7 +380,7 @@ async fn insert_row(
         values.join(", ")
     );
 
-    mutation_response(manager(&state).execute_query(&sql).await?)
+    mutation_response(manager(&state).execute_query(&sql, 1).await?)
 }
 
 #[derive(Debug, Deserialize)]
@@ -402,7 +422,7 @@ async fn update_row(
         where_clause
     );
 
-    mutation_response(manager(&state).execute_query(&sql).await?)
+    mutation_response(manager(&state).execute_query(&sql, 1).await?)
 }
 
 async fn add_column(
@@ -442,7 +462,7 @@ async fn add_column(
         }
     }
 
-    mutation_response(manager(&state).execute_query(&sql).await?)
+    mutation_response(manager(&state).execute_query(&sql, 1).await?)
 }
 
 #[derive(Debug, Deserialize)]
@@ -465,7 +485,7 @@ async fn rename_column(
         config.quote_identifier(&request.new_name)
     );
 
-    mutation_response(manager(&state).execute_query(&sql).await?)
+    mutation_response(manager(&state).execute_query(&sql, 1).await?)
 }
 
 async fn drop_column(
@@ -481,7 +501,7 @@ async fn drop_column(
         config.quote_identifier(&column)
     );
 
-    mutation_response(manager(&state).execute_query(&sql).await?)
+    mutation_response(manager(&state).execute_query(&sql, 1).await?)
 }
 
 #[derive(Debug, Deserialize)]
@@ -520,7 +540,7 @@ async fn add_index(
         columns
     );
 
-    mutation_response(manager(&state).execute_query(&sql).await?)
+    mutation_response(manager(&state).execute_query(&sql, 1).await?)
 }
 
 async fn drop_index(
@@ -541,7 +561,7 @@ async fn drop_index(
         }
     };
 
-    mutation_response(manager(&state).execute_query(&sql).await?)
+    mutation_response(manager(&state).execute_query(&sql, 1).await?)
 }
 
 fn manager(state: &Arc<AppState>) -> DatabaseManager<'_> {
