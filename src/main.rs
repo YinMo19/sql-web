@@ -1,16 +1,20 @@
-use clap::Parser;
-use rocket::fs::FileServer;
-use rocket::routes;
+use std::{net::SocketAddr, sync::Arc};
 
+use anyhow::Context;
+use axum::Router;
+use clap::Parser;
+use sqlx::AnyPool;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use uuid::Uuid;
+
+mod api;
+mod assets;
 mod config;
 mod models;
-mod routes;
-mod template;
 
-use config::{DatabaseConfig, DatabasePool};
-use routes::*;
+use config::DatabaseConfig;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(name = "sql-web")]
 #[command(about = "A web-based database browser for SQLite, MySQL, and PostgreSQL")]
 pub struct Args {
@@ -43,64 +47,65 @@ pub struct Args {
     pub debug: bool,
 }
 
-#[rocket::main]
-async fn main() -> Result<(), rocket::Error> {
+#[derive(Clone)]
+pub struct AppState {
+    pub args: Args,
+    pub db_config: DatabaseConfig,
+    pub pool: AnyPool,
+    pub auth_token: String,
+}
+
+pub type SharedState = Arc<AppState>;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let db_config = DatabaseConfig::from_url(&args.database_url).expect("Invalid database URL");
+    init_tracing(args.debug);
+    sqlx::any::install_default_drivers();
 
-    let host = args.host.clone();
-    let port = args.port;
+    let mut db_config = DatabaseConfig::from_url(&args.database_url)
+        .map_err(|error| anyhow::anyhow!("Invalid database URL: {error}"))?;
+    db_config.readonly = db_config.readonly || args.readonly;
 
-    let figment = rocket::Config::figment()
-        // I recommand you to replace it and build a binary to use, but this almost
-        // use yourself, so security is considered behind the functions.
-        .merge(("secret_key", "h/ie6GKkDtaurjNrQYCRsrSaWLNRVA2hSeyMSD8NycZphe7Le6ZZiJsdareCfE3jIuMV9hG/nbxRCJNKhUBkuw=="))
-        .merge(("address", host))
-        .merge(("port", port));
+    let pool = AnyPool::connect(&db_config.url)
+        .await
+        .context("Failed to connect to database")?;
 
-    let _res = rocket::custom(figment)
-        .manage(args)
-        .manage(db_config.clone())
-        .mount(
-            "/",
-            routes![
-                index::index,
-                index::index_redirect,
-                index::login,
-                index::login_post,
-                index::logout,
-                query::query_page,
-                query::execute_query,
-                query::api_execute_query,
-                tables::table_list,
-                tables::table_structure,
-                tables::table_content,
-                tables::table_query,
-                tables::table_query_execute,
-                tables::table_insert,
-                tables::table_update,
-                tables::table_update_execute,
-                tables::table_export,
-                tables::table_import,
-                indexes::add_index,
-                indexes::add_index_execute,
-                indexes::drop_index,
-                indexes::drop_index_execute,
-                columns::add_column,
-                columns::add_column_execute,
-                columns::drop_column,
-                columns::drop_column_execute,
-                columns::rename_column,
-                columns::rename_column_execute,
-            ],
-        )
-        .mount("/static", FileServer::from("static"))
-        .attach(DatabasePool::init())
-        .ignite()
-        .await?
-        .launch()
-        .await?;
+    let addr: SocketAddr = format!("{}:{}", args.host, args.port)
+        .parse()
+        .context("Invalid bind address")?;
+
+    let state = Arc::new(AppState {
+        args,
+        db_config,
+        pool,
+        auth_token: Uuid::new_v4().to_string(),
+    });
+
+    let app = Router::new()
+        .nest("/api", api::router(state.clone()))
+        .fallback(assets::serve)
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind(addr)
+        .await
+        .with_context(|| format!("Failed to bind to {addr}"))?;
+
+    tracing::info!("sql-web listening on http://{addr}");
+    axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+fn init_tracing(debug: bool) {
+    let default_filter = if debug { "sql_web=debug,info" } else { "info" };
+
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| default_filter.into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
 }
