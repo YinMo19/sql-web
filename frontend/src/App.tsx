@@ -279,6 +279,7 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
   const [pageInput, setPageInput] = useState('1')
+  const [activeTable, setActiveTable] = useState(name)
 
   async function load() {
     try {
@@ -290,18 +291,35 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
   }
 
   useEffect(() => {
+    if (name !== activeTable) {
+      setActiveTable(name)
+      setData(null)
+      setError('')
+      setPageInput('1')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      if (page !== 1) {
+        setPage(1)
+        return
+      }
+    }
+
     void load()
-  }, [name, page])
+  }, [name, page, activeTable])
 
   useEffect(() => {
     if (data) setPageInput(String(data.page))
   }, [data?.page])
 
+  function changePage(nextPage: number) {
+    setPage(Math.min(Math.max(nextPage, 1), data?.total_pages ?? 1))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   function jumpToPage(event: FormEvent) {
     event.preventDefault()
     const nextPage = Number.parseInt(pageInput, 10)
     if (Number.isNaN(nextPage)) return
-    setPage(Math.min(Math.max(nextPage, 1), data?.total_pages ?? 1))
+    changePage(nextPage)
   }
 
   if (error) return <PageError message={error} />
@@ -322,14 +340,14 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
       </div>
       <DataTable columns={data.columns} rows={data.rows} previewable editable={!readonly} tableName={name} onChanged={load} />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button variant="outline" disabled={page <= 1} onClick={() => setPage((page) => page - 1)}>Previous</Button>
+        <Button variant="outline" disabled={page <= 1} onClick={() => changePage(page - 1)}>Previous</Button>
         <form className="flex items-center gap-2" onSubmit={jumpToPage}>
           <span className="text-sm text-muted-foreground">Page</span>
           <Input className="h-8 w-20" min={1} max={data.total_pages} type="number" value={pageInput} onChange={(event) => setPageInput(event.target.value)} />
           <span className="text-sm text-muted-foreground">of {data.total_pages}</span>
           <Button size="sm" variant="outline" type="submit">Go</Button>
         </form>
-        <Button variant="outline" disabled={page >= data.total_pages} onClick={() => setPage((page) => page + 1)}>Next</Button>
+        <Button variant="outline" disabled={page >= data.total_pages} onClick={() => changePage(page + 1)}>Next</Button>
       </div>
     </div>
   )
