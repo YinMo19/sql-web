@@ -21,7 +21,42 @@ This is a Rust rewrite of the Python [sqlite-web](https://github.com/coleifer/sq
 
 ## Installation
 
-### Prerequisites
+### Quick install
+
+macOS/Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/YinMo19/sql-web/main/scripts/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+iwr https://raw.githubusercontent.com/YinMo19/sql-web/main/scripts/install.ps1 -UseB | iex
+```
+
+Install a specific version:
+
+```bash
+SQL_WEB_VERSION=v0.3.1 sh -c "$(curl -fsSL https://raw.githubusercontent.com/YinMo19/sql-web/main/scripts/install.sh)"
+```
+
+```powershell
+$env:SQL_WEB_VERSION="v0.3.1"; iwr https://raw.githubusercontent.com/YinMo19/sql-web/main/scripts/install.ps1 -UseB | iex
+```
+
+You can inspect the install scripts before running them:
+
+- https://raw.githubusercontent.com/YinMo19/sql-web/main/scripts/install.sh
+- https://raw.githubusercontent.com/YinMo19/sql-web/main/scripts/install.ps1
+
+### Cargo install
+
+```bash
+cargo install sql-web
+```
+
+### Prerequisites for building from source
 
 - Rust 1.85 or later
 - Cargo
