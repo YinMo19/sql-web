@@ -1,5 +1,5 @@
 import { FormEvent, Fragment, ReactNode, useEffect, useMemo, useState } from 'react'
-import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { Database, LogOut, Play, Table2 } from 'lucide-react'
 import { api, ApiError, ColumnDetail, formatFileSize, OverviewResponse, QueryResponse, TableRows, TableStructure } from '@/lib/api'
 import { Badge } from '@/components/ui/badge'
@@ -122,7 +122,7 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
       </header>
-      <div className="grid flex-1 grid-cols-[260px_1fr]">
+      <div className="grid min-w-0 flex-1 grid-cols-[260px_minmax(0,1fr)]">
         <aside className="border-r bg-background p-4">
           <nav className="space-y-1">
             <NavLink to="/">Overview</NavLink>
@@ -139,11 +139,12 @@ function Shell({ onLogout }: { onLogout: () => void }) {
             </nav>
           </div>
         </aside>
-        <main className="p-6">
+        <main className="min-w-0 overflow-hidden p-6">
           <Routes>
             <Route path="/" element={<OverviewPage overview={overview} />} />
             <Route path="/query" element={<QueryPage />} />
             <Route path="/tables/:table" element={<TableRowsPage readonly={overview.database_stats.readonly} />} />
+            <Route path="/tables/:table/preview" element={<RowPreviewPage />} />
             <Route path="/tables/:table/sql" element={<TableSqlPage />} />
             <Route path="/tables/:table/structure" element={<TableStructurePage readonly={overview.database_stats.readonly} onChanged={load} />} />
           </Routes>
@@ -307,7 +308,7 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
           {!readonly && <InsertRow table={name} columns={data.columns} onChanged={load} />}
         </div>
       </div>
-      <DataTable columns={data.columns} rows={data.rows} editable={!readonly} tableName={name} onChanged={load} />
+      <DataTable columns={data.columns} rows={data.rows} previewable editable={!readonly} tableName={name} onChanged={load} />
       <div className="flex items-center justify-between">
         <Button variant="outline" disabled={page <= 1} onClick={() => setPage((page) => page - 1)}>Previous</Button>
         <span className="text-sm text-muted-foreground">Page {data.page} of {data.total_pages}</span>
@@ -473,24 +474,28 @@ function DataTable({
   columns,
   rows,
   editable = false,
+  previewable = false,
   tableName,
   onChanged,
 }: {
   columns: string[]
   rows: (string | null)[][]
   editable?: boolean
+  previewable?: boolean
   tableName?: string
   onChanged?: () => void
 }) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
+  const navigate = useNavigate()
+  const hasActions = editable || previewable
 
   return (
-    <div className="overflow-auto rounded-md border bg-background">
-      <Table>
+    <div className="w-full max-w-full overflow-x-auto rounded-md border bg-background">
+      <Table className="w-full table-fixed">
         <TableHeader>
           <TableRow>
-            {columns.map((column) => <TableHead key={column}>{column}</TableHead>)}
-            {editable && <TableHead className="w-24">Actions</TableHead>}
+            {columns.map((column) => <TableHead className="w-48 truncate" key={column}>{column}</TableHead>)}
+            {hasActions && <TableHead className="w-40">Actions</TableHead>}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -509,13 +514,77 @@ function DataTable({
                 />
               )}
               <TableRow>
-                {row.map((value, cellIndex) => <TableCell className="max-w-80 truncate font-mono text-xs" key={cellIndex}>{value ?? <span className="text-muted-foreground">NULL</span>}</TableCell>)}
-                {editable && <TableCell><Button size="sm" variant="outline" onClick={() => setEditingIndex(rowIndex)}>Edit</Button></TableCell>}
+                {row.map((value, cellIndex) => (
+                  <TableCell className="w-48 max-w-48 truncate font-mono text-xs" title={value ?? 'NULL'} key={cellIndex}>
+                    {value ?? <span className="text-muted-foreground">NULL</span>}
+                  </TableCell>
+                ))}
+                {hasActions && (
+                  <TableCell className="w-40">
+                    <div className="flex gap-2">
+                      {previewable && tableName && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/tables/${encodeURIComponent(tableName)}/preview`, { state: { columns, row } })}
+                        >
+                          Preview
+                        </Button>
+                      )}
+                      {editable && (
+                        <Button size="sm" variant="outline" onClick={() => setEditingIndex(rowIndex)}>
+                          Edit
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             </Fragment>
           ))}
         </TableBody>
       </Table>
+    </div>
+  )
+}
+
+function RowPreviewPage() {
+  const { table = '' } = useParams()
+  const name = decodeURIComponent(table)
+  const location = useLocation()
+  const state = location.state as { columns?: string[]; row?: (string | null)[] } | null
+  const columns = state?.columns
+  const row = state?.row
+
+  if (!columns || !row) {
+    return <PageError message="No row preview data is available. Please open preview from the table rows page." />
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold">{name} row preview</h1>
+        <Link className="text-sm text-muted-foreground underline" to={`/tables/${encodeURIComponent(name)}`}>Back to rows</Link>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {columns.map((column, index) => {
+          const value = formatPreviewValue(row[index])
+          return (
+            <Card key={column} className="min-w-0">
+              <CardHeader>
+                <CardTitle className="text-sm">{column}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {row[index] === null ? (
+                  <code className="text-xs text-muted-foreground">NULL</code>
+                ) : (
+                  <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words text-xs leading-relaxed">{value}</pre>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -587,6 +656,16 @@ function EditableRow({
 
 function PageError({ message }: { message: string }) {
   return <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{message}</div>
+}
+
+function formatPreviewValue(value: string | null) {
+  if (value === null) return 'NULL'
+
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
+  }
 }
 
 function quoteSqlIdentifier(identifier: string) {

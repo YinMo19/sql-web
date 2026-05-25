@@ -1,6 +1,6 @@
 [package]
 name = "sql-web"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["YinMo19 <me@YinMo19.top>"]
 edition = "2024"
 description = "A web-based database browser for SQLite, MySQL, and PostgreSQL written in Rust using Axum, React, and SQLx."
