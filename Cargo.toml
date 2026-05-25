@@ -47,3 +47,8 @@ include_dir = "0.7"
 mime_guess = "2.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+strip = true
+codegen-units = 1
+opt-level = 'z'
