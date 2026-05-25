@@ -94,6 +94,8 @@ jobs:
 
       - name: Build binary
         shell: bash
+        env:
+          SQL_WEB_SKIP_FRONTEND_BUILD: '1'
         run: |
           if [ "${{ matrix.use_cross }}" = "true" ]; then
             cross build --release --target "${{ matrix.target }}"

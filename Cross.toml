@@ -1,0 +1,4 @@
+[build.env]
+passthrough = [
+    "SQL_WEB_SKIP_FRONTEND_BUILD",
+]
