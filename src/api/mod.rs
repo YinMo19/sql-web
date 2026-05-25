@@ -32,6 +32,7 @@ pub fn router(state: SharedState) -> Router<SharedState> {
         .route("/tables/{table}/rows", get(table_rows).post(insert_row))
         .route("/tables/{table}/rows", patch(update_row))
         .route("/query", post(execute_query))
+        .route("/tables/{table}/sql", post(execute_table_sql))
         .route("/tables/{table}/columns", post(add_column))
         .route(
             "/tables/{table}/columns/{column}",
@@ -54,7 +55,7 @@ async fn require_auth(
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    if is_authenticated(request.headers(), &state) {
+    if is_sqlite(&state) || is_authenticated(request.headers(), &state) {
         next.run(request).await
     } else {
         ApiError::new(StatusCode::UNAUTHORIZED, "Authentication required").into_response()
@@ -113,11 +114,13 @@ async fn login(
     State(state): State<SharedState>,
     Json(request): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
-    let expected_password =
-        std::env::var("SQL_WEB_PASSWORD").unwrap_or_else(|_| "admin".to_string());
+    if !is_sqlite(&state) {
+        let expected_password =
+            std::env::var("SQL_WEB_PASSWORD").unwrap_or_else(|_| "admin".to_string());
 
-    if request.password != expected_password {
-        return Err(ApiError::new(StatusCode::UNAUTHORIZED, "Invalid password"));
+        if request.password != expected_password {
+            return Err(ApiError::new(StatusCode::UNAUTHORIZED, "Invalid password"));
+        }
     }
 
     let mut headers = HeaderMap::new();
@@ -155,7 +158,7 @@ async fn logout() -> impl IntoResponse {
 
 async fn session(State(state): State<SharedState>, headers: HeaderMap) -> Json<AuthResponse> {
     Json(AuthResponse {
-        authenticated: is_authenticated(&headers, &state),
+        authenticated: is_sqlite(&state) || is_authenticated(&headers, &state),
     })
 }
 
@@ -267,6 +270,21 @@ async fn table_rows(
 async fn execute_query(
     State(state): State<SharedState>,
     Json(request): Json<QueryRequest>,
+) -> Result<Json<QueryResponse>, ApiError> {
+    run_query(state, request).await
+}
+
+async fn execute_table_sql(
+    State(state): State<SharedState>,
+    Path(_table): Path<String>,
+    Json(request): Json<QueryRequest>,
+) -> Result<Json<QueryResponse>, ApiError> {
+    run_query(state, request).await
+}
+
+async fn run_query(
+    state: SharedState,
+    request: QueryRequest,
 ) -> Result<Json<QueryResponse>, ApiError> {
     let sql = request.sql.trim();
     if sql.is_empty() {
@@ -571,6 +589,10 @@ fn build_where_clause(config: &DatabaseConfig, conditions: &HashMap<String, Stri
         })
         .collect::<Vec<_>>()
         .join(" AND ")
+}
+
+fn is_sqlite(state: &AppState) -> bool {
+    matches!(state.db_config.database_type, DatabaseType::Sqlite)
 }
 
 fn is_authenticated(headers: &HeaderMap, state: &AppState) -> bool {

@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
+import { FormEvent, Fragment, ReactNode, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom'
 import { Database, LogOut, Play, Table2 } from 'lucide-react'
 import { api, ApiError, ColumnDetail, formatFileSize, OverviewResponse, QueryResponse, TableRows, TableStructure } from '@/lib/api'
@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+
+const REPOSITORY_URL = 'https://github.com/YinMo19/sql-web'
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null)
@@ -57,7 +59,7 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>SQL Web</CardTitle>
-          <p className="text-sm text-muted-foreground">输入密码访问数据库管理页面。</p>
+          <p className="text-sm text-muted-foreground">输入密码访问数据库管理页面。SQLite 连接会自动进入。</p>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={submit}>
@@ -103,12 +105,15 @@ function Shell({ onLogout }: { onLogout: () => void }) {
   if (!overview) return <div className="p-8 text-sm text-muted-foreground">Loading database...</div>
 
   return (
-    <div className="min-h-screen bg-muted/20">
+    <div className="flex min-h-screen flex-col bg-muted/20">
       <header className="border-b bg-background">
         <div className="flex h-14 items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2 font-semibold">
+          <Link to="/" className="flex items-center gap-3 font-semibold">
             <Database className="h-5 w-5" />
-            {overview.database_stats.database_name}
+            <span className="flex flex-col leading-tight">
+              <span>SQL-WEB by YinMo19</span>
+              <span className="text-xs font-normal text-muted-foreground">{overview.database_stats.database_name}</span>
+            </span>
           </Link>
           <div className="flex items-center gap-2">
             <Badge className="bg-background">{overview.database_stats.database_type}</Badge>
@@ -117,8 +122,8 @@ function Shell({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
       </header>
-      <div className="grid grid-cols-[260px_1fr]">
-        <aside className="min-h-[calc(100vh-3.5rem)] border-r bg-background p-4">
+      <div className="grid flex-1 grid-cols-[260px_1fr]">
+        <aside className="border-r bg-background p-4">
           <nav className="space-y-1">
             <NavLink to="/">Overview</NavLink>
             <NavLink to="/query">Query</NavLink>
@@ -139,10 +144,25 @@ function Shell({ onLogout }: { onLogout: () => void }) {
             <Route path="/" element={<OverviewPage overview={overview} />} />
             <Route path="/query" element={<QueryPage />} />
             <Route path="/tables/:table" element={<TableRowsPage readonly={overview.database_stats.readonly} />} />
+            <Route path="/tables/:table/sql" element={<TableSqlPage />} />
             <Route path="/tables/:table/structure" element={<TableStructurePage readonly={overview.database_stats.readonly} onChanged={load} />} />
           </Routes>
         </main>
       </div>
+      <footer className="border-t bg-background px-6 py-3 text-center text-xs text-muted-foreground">
+        <span>By YinMo19</span>
+        <a
+          href={REPOSITORY_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="ml-2 inline-flex h-7 w-7 items-center justify-center rounded-full border text-foreground transition-colors hover:bg-muted"
+          aria-label="GitHub repository"
+        >
+          <svg className="h-4 w-4" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M8 0C3.58 0 0 3.67 0 8.2c0 3.62 2.29 6.69 5.47 7.78.4.08.55-.18.55-.4 0-.2-.01-.85-.01-1.54-2.01.38-2.53-.5-2.69-.96-.09-.24-.48-.96-.82-1.15-.28-.15-.68-.53-.01-.54.63-.01 1.08.59 1.23.84.72 1.24 1.87.89 2.33.68.07-.53.28-.89.51-1.1-1.78-.21-3.64-.91-3.64-4.04 0-.89.31-1.62.82-2.19-.08-.21-.36-1.04.08-2.16 0 0 .67-.22 2.2.84A7.42 7.42 0 0 1 8 3.96c.68 0 1.36.09 2 .28 1.53-1.06 2.2-.84 2.2-.84.44 1.12.16 1.95.08 2.16.51.57.82 1.3.82 2.19 0 3.14-1.87 3.83-3.65 4.04.29.25.54.75.54 1.52 0 1.1-.01 1.98-.01 2.25 0 .22.15.48.55.4A8.13 8.13 0 0 0 16 8.2C16 3.67 12.42 0 8 0Z" />
+          </svg>
+        </a>
+      </footer>
     </div>
   )
 }
@@ -210,6 +230,47 @@ function QueryPage() {
   )
 }
 
+function TableSqlPage() {
+  const { table = '' } = useParams()
+  const name = decodeURIComponent(table)
+  const defaultSql = useMemo(() => `SELECT * FROM ${quoteSqlIdentifier(name)} LIMIT 100;`, [name])
+  const [sql, setSql] = useState(defaultSql)
+  const [result, setResult] = useState<QueryResponse | null>(null)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setSql(defaultSql)
+    setResult(null)
+    setError('')
+  }, [defaultSql])
+
+  async function run() {
+    setLoading(true)
+    setError('')
+    try {
+      setResult(await api.tableQuery(name, sql))
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Query failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-semibold">{name} custom SQL</h1>
+        <Link className="text-sm text-muted-foreground underline" to={`/tables/${encodeURIComponent(name)}`}>Browse rows</Link>
+      </div>
+      <Textarea value={sql} onChange={(event) => setSql(event.target.value)} className="min-h-40 font-mono" />
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Button onClick={run} disabled={loading}><Play className="mr-2 h-4 w-4" />{loading ? 'Running...' : 'Execute for table'}</Button>
+      {result && <ResultTable result={result} />}
+    </div>
+  )
+}
+
 function TableRowsPage({ readonly }: { readonly: boolean }) {
   const { table = '' } = useParams()
   const name = decodeURIComponent(table)
@@ -242,10 +303,11 @@ function TableRowsPage({ readonly }: { readonly: boolean }) {
         </div>
         <div className="flex gap-2">
           <Link to={`/tables/${encodeURIComponent(name)}/structure`}><Button variant="outline">Structure</Button></Link>
+          <Link to={`/tables/${encodeURIComponent(name)}/sql`}><Button variant="outline">Custom SQL</Button></Link>
           {!readonly && <InsertRow table={name} columns={data.columns} onChanged={load} />}
         </div>
       </div>
-      <DataTable columns={data.columns} rows={data.rows} />
+      <DataTable columns={data.columns} rows={data.rows} editable={!readonly} tableName={name} onChanged={load} />
       <div className="flex items-center justify-between">
         <Button variant="outline" disabled={page <= 1} onClick={() => setPage((page) => page - 1)}>Previous</Button>
         <span className="text-sm text-muted-foreground">Page {data.page} of {data.total_pages}</span>
@@ -313,7 +375,10 @@ function TableStructurePage({ readonly, onChanged }: { readonly: boolean; onChan
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">{name} structure</h1>
-          <Link className="text-sm text-muted-foreground underline" to={`/tables/${encodeURIComponent(name)}`}>Browse rows</Link>
+          <div className="flex gap-3 text-sm text-muted-foreground">
+            <Link className="underline" to={`/tables/${encodeURIComponent(name)}`}>Browse rows</Link>
+            <Link className="underline" to={`/tables/${encodeURIComponent(name)}/sql`}>Custom SQL</Link>
+          </div>
         </div>
         {!readonly && <AddColumn table={name} onChanged={() => { void load(); onChanged() }} />}
       </div>
@@ -404,19 +469,126 @@ function ResultTable({ result }: { result: QueryResponse }) {
   return <DataTable columns={result.columns} rows={result.rows} />
 }
 
-function DataTable({ columns, rows }: { columns: string[]; rows: (string | null)[][] }) {
+function DataTable({
+  columns,
+  rows,
+  editable = false,
+  tableName,
+  onChanged,
+}: {
+  columns: string[]
+  rows: (string | null)[][]
+  editable?: boolean
+  tableName?: string
+  onChanged?: () => void
+}) {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null)
+
   return (
     <div className="overflow-auto rounded-md border bg-background">
       <Table>
-        <TableHeader><TableRow>{columns.map((column) => <TableHead key={column}>{column}</TableHead>)}</TableRow></TableHeader>
+        <TableHeader>
+          <TableRow>
+            {columns.map((column) => <TableHead key={column}>{column}</TableHead>)}
+            {editable && <TableHead className="w-24">Actions</TableHead>}
+          </TableRow>
+        </TableHeader>
         <TableBody>
-          {rows.map((row, rowIndex) => <TableRow key={rowIndex}>{row.map((value, cellIndex) => <TableCell className="max-w-80 truncate font-mono text-xs" key={cellIndex}>{value ?? <span className="text-muted-foreground">NULL</span>}</TableCell>)}</TableRow>)}
+          {rows.map((row, rowIndex) => (
+            <Fragment key={rowIndex}>
+              {editingIndex === rowIndex && tableName && onChanged && (
+                <EditableRow
+                  tableName={tableName}
+                  columns={columns}
+                  row={row}
+                  onCancel={() => setEditingIndex(null)}
+                  onSaved={() => {
+                    setEditingIndex(null)
+                    onChanged()
+                  }}
+                />
+              )}
+              <TableRow>
+                {row.map((value, cellIndex) => <TableCell className="max-w-80 truncate font-mono text-xs" key={cellIndex}>{value ?? <span className="text-muted-foreground">NULL</span>}</TableCell>)}
+                {editable && <TableCell><Button size="sm" variant="outline" onClick={() => setEditingIndex(rowIndex)}>Edit</Button></TableCell>}
+              </TableRow>
+            </Fragment>
+          ))}
         </TableBody>
       </Table>
     </div>
   )
 }
 
+function EditableRow({
+  tableName,
+  columns,
+  row,
+  onCancel,
+  onSaved,
+}: {
+  tableName: string
+  columns: string[]
+  row: (string | null)[]
+  onCancel: () => void
+  onSaved: () => void
+}) {
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(columns.map((column, index) => [column, row[index] ?? ''])))
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const where_clause = Object.fromEntries(
+      columns
+        .map((column, index) => [column, row[index]] as const)
+        .filter((entry): entry is readonly [string, string] => entry[1] !== null),
+    )
+
+    if (Object.keys(where_clause).length === 0) {
+      setError('Cannot update a row where every original value is NULL.')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    try {
+      const data = Object.fromEntries(columns.map((column) => [column, values[column] || null]))
+      await api.updateRow(tableName, data, where_clause)
+      onSaved()
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Update failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <TableRow className="bg-muted/50 hover:bg-muted/50">
+      <TableCell colSpan={columns.length + 1}>
+        <div className="space-y-3 p-2">
+          <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {columns.map((column) => (
+              <label key={column} className="space-y-1 text-xs font-medium text-muted-foreground">
+                <span>{column}</span>
+                <Input value={values[column] ?? ''} onChange={(event) => setValues({ ...values, [column]: event.target.value })} />
+              </label>
+            ))}
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex gap-2">
+            <Button size="sm" onClick={save} disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</Button>
+            <Button size="sm" variant="outline" onClick={onCancel}>Cancel</Button>
+          </div>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
 function PageError({ message }: { message: string }) {
   return <div className="rounded-md border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">{message}</div>
+}
+
+function quoteSqlIdentifier(identifier: string) {
+  return `"${identifier.replace(/"/g, '""')}"`
 }

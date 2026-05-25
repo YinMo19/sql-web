@@ -123,6 +123,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ sql }),
     }),
+  tableQuery: (table: string, sql: string) =>
+    request<QueryResponse>(`/api/tables/${encodeURIComponent(table)}/sql`, {
+      method: 'POST',
+      body: JSON.stringify({ sql }),
+    }),
   insertRow: (table: string, data: Record<string, string | null>) =>
     request<QueryResponse>(`/api/tables/${encodeURIComponent(table)}/rows`, {
       method: 'POST',

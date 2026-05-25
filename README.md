@@ -42,24 +42,32 @@ The binary will be available at `target/release/sql-web`.
 ## Usage
 
 ```bash
-# SQLite database
-sql-web --database-url "sqlite://path/to/database.db"
+# SQLite database file, sqlite:// scheme is inferred
+sql-web ./path/to/database.db
+sql-web ./path/to/database.sqlite3
+
+# Explicit SQLite URL still works
+sql-web --database-url "sqlite:///absolute/path/to/database.db"
 
 # MySQL database
-sql-web --database-url "mysql://user:password@localhost/database_name"
+sql-web "mysql://user:password@localhost/database_name"
 
 # PostgreSQL database
-sql-web --database-url "postgres://user:password@localhost/database_name"
+sql-web "postgres://user:password@localhost/database_name"
 ```
 
 ### Command-line options
 
 ```text
-sql-web [OPTIONS] --database-url <DATABASE_URL>
+sql-web [OPTIONS] <DATABASE>
+
+Arguments:
+  <DATABASE>
+          Database URL or SQLite database file path
 
 Options:
   -d, --database-url <DATABASE_URL>
-          Database URL
+          Database URL, kept for compatibility
 
   -H, --host <HOST>
           Host to bind to [default: 127.0.0.1]
@@ -89,10 +97,10 @@ Set the `SQL_WEB_PASSWORD` environment variable to require password authenticati
 
 ```bash
 export SQL_WEB_PASSWORD="your-secret-password"
-sql-web --database-url "sqlite://example.db"
+sql-web "mysql://user:password@localhost/database_name"
 ```
 
-If no password is set, the default password is `admin`.
+If no password is set, the default password is `admin`. SQLite file connections skip password login.
 
 ### Accessing the web interface
 
@@ -105,7 +113,10 @@ Once started, open your browser and navigate to:
 ### SQLite
 
 ```text
-sqlite://path/to/file.db
+./path/to/file.db
+./path/to/file.sqlite
+./path/to/file.sqlite3
+./path/to/file.db3
 sqlite:///absolute/path/to/file.db
 sqlite://file.db?mode=ro
 ```
@@ -130,7 +141,7 @@ postgres://username:password@host/database?sslmode=require
 ### Backend + embedded frontend
 
 ```bash
-cargo run -- --database-url "sqlite://test.db" --debug
+cargo run -- ./test.db --debug
 ```
 
 ### Frontend dev server
