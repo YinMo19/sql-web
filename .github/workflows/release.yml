@@ -12,6 +12,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   SQL_WEB_SKIP_FRONTEND_BUILD: '1'
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
 
 jobs:
   build:
@@ -78,17 +79,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-
 
-      - name: Cache frontend node_modules
-        uses: actions/cache@v4
-        with:
-          path: frontend/node_modules
-          key: ${{ runner.os }}-pnpm-modules-${{ hashFiles('frontend/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-modules-
-
       - name: Build frontend assets
         shell: bash
         run: |
+          rm -rf frontend/node_modules
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend build
 
