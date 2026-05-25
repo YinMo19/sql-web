@@ -20,6 +20,16 @@ fn main() {
         panic!("frontend directory does not exist");
     }
 
+    let dist_index = frontend_dir.join("dist").join("index.html");
+    let package_json = frontend_dir.join("package.json");
+    if dist_index.exists() && !package_json.exists() {
+        return;
+    }
+
+    if !package_json.exists() {
+        panic!("frontend/package.json does not exist and frontend/dist is not available");
+    }
+
     let pnpm = env::var("PNPM").unwrap_or_else(|_| "pnpm".to_string());
 
     if !frontend_dir.join("node_modules").exists() {

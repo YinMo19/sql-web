@@ -11,6 +11,14 @@ license = "MIT"
 readme = "README.md"
 keywords = ["sql", "mysql", "sqlite", "pgsql", "axum"]
 build = "build.rs"
+include = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "build.rs",
+    "src/**",
+    "frontend/dist/**",
+]
 
 [dependencies]
 axum = { version = "0.8", features = ["json", "macros"] }
